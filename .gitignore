@@ -14,6 +14,9 @@ captures/
 *.env
 .env
 
+# Local tooling
+.zcode/
+
 # Generated release artifacts. Publish APKs through GitHub Releases instead.
 *.apk
 *.aab

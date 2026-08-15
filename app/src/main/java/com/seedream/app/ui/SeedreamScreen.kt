@@ -232,7 +232,13 @@ fun SeedreamScreen(state: SeedreamUiState, viewModel: SeedreamViewModel) {
                     }
                 )
 
-                AppTab.Debug -> DebugTab(state)
+                AppTab.Debug -> DebugTab(
+                    state = state,
+                    onLoggingChange = viewModel::setLoggingEnabled,
+                    onLoadLog = viewModel::loadLogContent,
+                    onClearLog = viewModel::clearLog,
+                    onExportLog = { viewModel.exportLog(context) }
+                )
             }
         }
     }
@@ -925,7 +931,13 @@ private fun HistoryItemRow(
 }
 
 @Composable
-private fun DebugTab(state: SeedreamUiState) {
+private fun DebugTab(
+    state: SeedreamUiState,
+    onLoggingChange: (String) -> Unit,
+    onLoadLog: () -> Unit,
+    onClearLog: () -> Unit,
+    onExportLog: () -> Unit
+) {
     Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         SurfacePanel {
             Text("请求体预览", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -935,6 +947,35 @@ private fun DebugTab(state: SeedreamUiState) {
             SurfacePanel {
                 Text("外部搜索摘要", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 CodeBlock(state.searchSummary, modifier = Modifier.heightIn(min = 90.dp, max = 180.dp))
+            }
+        }
+        SurfacePanel {
+            Text("实时日志", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            OptionDropdown(
+                "日志记录",
+                state.loggingEnabled,
+                listOf("false" to "关闭", "true" to "开启"),
+                onLoggingChange
+            )
+            Text(
+                "开启后会将运行日志（含停止/取消/崩溃前及崩溃瞬间的信息）实时写入本地文件，用于排查问题。关闭时不再写入。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(state.logFileInfo, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            CompactButtonRow {
+                ToolButton("刷新", Icons.Default.Refresh, onLoadLog)
+                ToolButton("清空", Icons.Default.Delete, onClearLog, danger = true)
+                ToolButton("导出", Icons.Default.Download, onExportLog)
+            }
+            if (state.logContent.isNotBlank()) {
+                CodeBlock(state.logContent, modifier = Modifier.heightIn(min = 200.dp, max = 320.dp))
+            } else {
+                Text(
+                    "（暂无日志内容，开启日志记录后在此查看）",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
         }
         SurfacePanel(modifier = Modifier.weight(1f)) {

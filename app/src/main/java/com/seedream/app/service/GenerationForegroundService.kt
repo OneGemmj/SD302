@@ -17,6 +17,7 @@ import com.seedream.app.MainActivity
 import com.seedream.app.R
 import com.seedream.app.model.ResultImage
 import com.seedream.app.model.StatusKind
+import com.seedream.app.logging.LogEventBus
 import com.seedream.app.network.ImageExtractor
 import com.seedream.app.network.RetryPolicy
 import com.seedream.app.network.SeedreamApiClient
@@ -42,8 +43,8 @@ class GenerationForegroundService : Service() {
     private val apiClient = SeedreamApiClient()
     private lateinit var historyRepository: HistoryRepository
     private var generationJob: Job? = null
-    private var currentCall: Call? = null
-    private var currentResponse: Response? = null
+    @Volatile private var currentCall: Call? = null
+    @Volatile private var currentResponse: Response? = null
     private var wakeLock: PowerManager.WakeLock? = null
 
     /** Routes service-lifecycle calls to the main thread and runs teardown exactly once. */
@@ -117,8 +118,9 @@ class GenerationForegroundService : Service() {
         // and release the wake lock, but never call stopForeground/stopSelf
         // from onDestroy.
         cancellationRequested.set(true)
+        LogEventBus.log("onDestroy: cancelling generation job")
         currentCall?.cancel()
-        currentResponse?.close()
+        closeResponseAsync()
         generationJob?.cancel()
         generationJob = null
         releaseWakeLock()
@@ -135,12 +137,14 @@ class GenerationForegroundService : Service() {
         var lastError: Throwable? = null
 
         acquireWakeLock()
+        LogEventBus.log("runGeneration: started model=$model stream=$stream")
         GenerationEvents.emit(GenerationEvent.Started)
 
         try {
             for (attempt in 0..RetryPolicy.maxRetries) {
                 if (attempt > 0) {
                     val delayMillis = RetryPolicy.delayMillis(attempt)
+                    LogEventBus.log("runGeneration: retry $attempt/${RetryPolicy.maxRetries} after ${delayMillis}ms")
                     updateNotification("第 $attempt/${RetryPolicy.maxRetries} 次重试中...")
                     GenerationEvents.emit(
                         GenerationEvent.RetryScheduled(attempt, RetryPolicy.maxRetries, delayMillis)
@@ -193,8 +197,10 @@ class GenerationForegroundService : Service() {
                     // so it follows the normal cancellation path (rethrowing the
                     // raw IOException would escape the coroutine and crash).
                     if (cancellationRequested.get()) {
+                        LogEventBus.log("runGeneration: cancelled while in flight: ${error.javaClass.simpleName}: ${error.message}")
                         throw CancellationException("Generation cancelled", error)
                     }
+                    LogEventBus.log("runGeneration: attempt $attempt failed: ${error.javaClass.simpleName}: ${error.message}")
                     currentCall = null
                     currentResponse = null
                     lastError = error
@@ -207,9 +213,11 @@ class GenerationForegroundService : Service() {
             GenerationEvents.emit(GenerationEvent.Status(message, StatusKind.Error))
             GenerationEvents.emit(GenerationEvent.Failed(message))
         } catch (_: CancellationException) {
+            LogEventBus.log("runGeneration: cancelled, entering cancellation path")
             GenerationEvents.emit(GenerationEvent.Status("请求已取消", StatusKind.Muted))
             GenerationEvents.emit(GenerationEvent.Cancelled)
         } finally {
+            LogEventBus.log("runGeneration: finally teardown via stopCoordinator")
             stopCoordinator.stop()
         }
     }
@@ -299,12 +307,35 @@ class GenerationForegroundService : Service() {
 
     private fun cancelGeneration() {
         cancellationRequested.set(true)
+        LogEventBus.log("cancelGeneration: stop requested")
         currentCall?.cancel()
-        currentResponse?.close()
+        closeResponseAsync()
         generationJob?.cancel()
         generationJob = null
         GenerationEvents.tryEmit(GenerationEvent.Cancelled)
         stopCoordinator.stop()
+    }
+
+    /**
+     * Closes the in-flight response off the main thread. Closing an HTTP/2
+     * response that is still transferring writes a RST_STREAM frame to the
+     * socket; doing that on the main thread throws NetworkOnMainThreadException
+     * (see the crash: cancelGeneration -> Response.close -> Http2Writer.rstStream).
+     * A daemon thread is used so the close is not dropped when the service scope
+     * is cancelled in onDestroy.
+     */
+    private fun closeResponseAsync() {
+        val response = currentResponse
+        currentResponse = null
+        if (response != null) {
+            Thread {
+                runCatching { response.close() }
+            }.apply {
+                name = "Seedream-ResponseClose"
+                isDaemon = true
+                start()
+            }
+        }
     }
 
     private fun createNotificationChannel() {

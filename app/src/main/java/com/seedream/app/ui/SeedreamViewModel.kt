@@ -75,7 +75,8 @@ class SeedreamViewModel(application: Application) : AndroidViewModel(application
             webSearch = settingsStorage.getSetting("webSearch", "false"),
             externalSearch = settingsStorage.getSetting("externalSearch", "false"),
             searchProvider = settingsStorage.getSetting("searchProvider", "tavily"),
-            searchApiKey = keyStorage.loadSearchApiKey(settingsStorage.getSetting("searchProvider", "tavily"))
+            searchApiKey = keyStorage.loadSearchApiKey(settingsStorage.getSetting("searchProvider", "tavily")),
+            loggingEnabled = settingsStorage.getSetting("loggingEnabled", "false")
         )
     )
     val uiState: StateFlow<SeedreamUiState> = _uiState
@@ -165,6 +166,66 @@ class SeedreamViewModel(application: Application) : AndroidViewModel(application
         }
     }
     fun setSearchApiKey(value: String) = _uiState.update { it.copy(searchApiKey = value) }
+
+    fun setLoggingEnabled(value: String) {
+        settingsStorage.saveSetting("loggingEnabled", value)
+        _uiState.update { it.copy(loggingEnabled = value) }
+        val app = getApplication<Application>()
+        if (app is com.seedream.app.SeedreamApplication) {
+            if (value == "true") {
+                app.enableLogging()
+                loadLogContent()
+            } else {
+                app.disableLogging()
+                _uiState.update { it.copy(logContent = "", logFileInfo = "") }
+            }
+        }
+    }
+
+    fun loadLogContent() {
+        val dir = getApplication<Application>().filesDir
+        val logFile = java.io.File(dir, "logs/app.log")
+        val content = if (logFile.exists()) logFile.readText() else "(暂无日志内容)"
+        val info = if (logFile.exists()) {
+            val kb = logFile.length() / 1024.0
+            "日志文件：%.1f KB".format(kb)
+        } else {
+            "日志文件：不存在"
+        }
+        _uiState.update { it.copy(logContent = content, logFileInfo = info) }
+    }
+
+    fun clearLog() {
+        val dir = getApplication<Application>().filesDir
+        val logFile = java.io.File(dir, "logs/app.log")
+        logFile.delete()
+        _uiState.update { it.copy(logContent = "", logFileInfo = "日志文件：不存在") }
+    }
+
+    /** Shares the log file via the system share sheet (微信/QQ/邮件等). */
+    fun exportLog(context: Context) {
+        val logFile = java.io.File(context.filesDir, "logs/app.log")
+        if (!logFile.exists()) {
+            _uiState.update { it.copy(logFileInfo = "日志文件：不存在，无法导出") }
+            return
+        }
+        val uri = androidx.core.content.FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            logFile
+        )
+        val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(android.content.Intent.EXTRA_STREAM, uri)
+            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            putExtra(android.content.Intent.EXTRA_SUBJECT, "Seedream 运行日志")
+            putExtra(android.content.Intent.EXTRA_TEXT, "SeedreamAPP 运行日志（含崩溃信息），请查收")
+        }
+        val chooser = android.content.Intent.createChooser(intent, "导出日志")
+        chooser.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(chooser)
+    }
+
     fun setHistorySearch(value: String) {
         historyLimit = HISTORY_PAGE_SIZE
         _uiState.update {
