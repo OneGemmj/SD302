@@ -27,7 +27,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
@@ -40,6 +39,8 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.OpenInFull
@@ -127,6 +128,7 @@ fun SeedreamScreen(state: SeedreamUiState, viewModel: SeedreamViewModel) {
     var showUrlDialog by remember { mutableStateOf(false) }
     var confirmClearHistory by remember { mutableStateOf(false) }
     var showBackupDialog by remember { mutableStateOf(false) }
+    var showThemeDialog by remember { mutableStateOf(false) }
     var pendingRestoreUri by remember { mutableStateOf<Uri?>(null) }
 
     val pickImages = rememberLauncherForActivityResult(
@@ -171,6 +173,13 @@ fun SeedreamScreen(state: SeedreamUiState, viewModel: SeedreamViewModel) {
                     }
                     IconButton(onClick = { showBackupDialog = true }) {
                         Icon(Icons.Default.Backup, contentDescription = "备份")
+                    }
+                    IconButton(onClick = { showThemeDialog = true }) {
+                        Icon(
+                            if (state.themeMode == "dark") Icons.Default.DarkMode
+                            else Icons.Default.LightMode,
+                            contentDescription = "主题"
+                        )
                     }
                 }
             )
@@ -298,7 +307,7 @@ fun SeedreamScreen(state: SeedreamUiState, viewModel: SeedreamViewModel) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(MaterialTheme.shapes.medium)
                     .background(Color.Black)
                     .clickable { viewModel.closeImage() }
                     .padding(8.dp)
@@ -341,6 +350,14 @@ fun SeedreamScreen(state: SeedreamUiState, viewModel: SeedreamViewModel) {
             onBackup = { createBackupLauncher.launch("SD302-backup-${System.currentTimeMillis()}.zip") },
             onRestore = { openBackupLauncher.launch(arrayOf("application/zip")) },
             onRestoreConfirm = { pendingRestoreUri = it }
+        )
+    }
+
+    if (showThemeDialog) {
+        ThemeDialog(
+            themeMode = state.themeMode,
+            onThemeModeChange = viewModel::setThemeMode,
+            onDismiss = { showThemeDialog = false }
         )
     }
 
@@ -461,7 +478,7 @@ private fun StatusPanel(state: SeedreamUiState, onRetry: () -> Unit) {
             containerColor = MaterialTheme.colorScheme.primaryContainer,
             contentColor = MaterialTheme.colorScheme.onPrimaryContainer
         ),
-        shape = RoundedCornerShape(16.dp)
+        shape = MaterialTheme.shapes.large
     ) {
         Column(
             modifier = Modifier.padding(14.dp),
@@ -604,7 +621,7 @@ private fun ReferenceTile(
 ) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-        shape = RoundedCornerShape(8.dp),
+        shape = MaterialTheme.shapes.small,
         modifier = Modifier.width(132.dp)
     ) {
         Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -616,7 +633,7 @@ private fun ReferenceTile(
                     modifier = Modifier
                         .fillMaxWidth()
                         .aspectRatio(1f)
-                        .clip(RoundedCornerShape(6.dp))
+                        .clip(MaterialTheme.shapes.extraSmall)
                         .clickable {
                             if (selectionMode) {
                                 onSelectedChange(!selected)
@@ -666,7 +683,7 @@ private fun RecentResult(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .size(56.dp)
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(MaterialTheme.shapes.extraSmall)
                     .clickable { onPreview(image.src) }
             )
             Column(modifier = Modifier.weight(1f)) {
@@ -719,7 +736,7 @@ private fun ResultImageCard(
 ) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(8.dp)
+        shape = MaterialTheme.shapes.medium
     ) {
         Column {
             AsyncImage(
@@ -931,7 +948,7 @@ private fun HistoryItemRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
+            .clip(MaterialTheme.shapes.small)
             .background(MaterialTheme.colorScheme.surface)
             .padding(8.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -943,7 +960,7 @@ private fun HistoryItemRow(
             contentScale = ContentScale.Crop,
             modifier = Modifier
                 .size(76.dp)
-                .clip(RoundedCornerShape(6.dp))
+                .clip(MaterialTheme.shapes.extraSmall)
                 .clickable { onPreview(imageSrc) }
         )
         Spacer(Modifier.width(10.dp))
@@ -1080,6 +1097,38 @@ private fun ApiDialog(
                 if (state.netResult.isNotBlank()) {
                     Text(state.netResult, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                 }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("完成") } }
+    )
+}
+
+@Composable
+private fun ThemeDialog(
+    themeMode: String,
+    onThemeModeChange: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("外观主题") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OptionDropdown(
+                    label = "深色模式",
+                    value = themeMode,
+                    options = listOf(
+                        "system" to "跟随系统",
+                        "light" to "亮色",
+                        "dark" to "深色"
+                    ),
+                    onChange = onThemeModeChange
+                )
+                Text(
+                    "选择「跟随系统」则跟随系统深浅色设置；也可以手动固定为亮色或深色。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("完成") } }
@@ -1307,7 +1356,7 @@ private fun SurfacePanel(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        shape = RoundedCornerShape(16.dp)
+        shape = MaterialTheme.shapes.medium
     ) {
         Column(
             modifier = Modifier.padding(14.dp),
@@ -1401,7 +1450,7 @@ private fun CodeBlock(text: String, modifier: Modifier = Modifier) {
         Box(
             modifier = modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(8.dp))
+                .clip(MaterialTheme.shapes.small)
                 .background(Color(0xFF020617))
                 .verticalScroll(rememberScrollState())
         ) {

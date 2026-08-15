@@ -77,7 +77,8 @@ class SeedreamViewModel(application: Application) : AndroidViewModel(application
             externalSearch = settingsStorage.getSetting("externalSearch", "false"),
             searchProvider = settingsStorage.getSetting("searchProvider", "tavily"),
             searchApiKey = keyStorage.loadSearchApiKey(settingsStorage.getSetting("searchProvider", "tavily")),
-            loggingEnabled = settingsStorage.getSetting("loggingEnabled", "false")
+            loggingEnabled = settingsStorage.getSetting("loggingEnabled", "false"),
+            themeMode = settingsStorage.getSetting("themeMode", "system")
         )
     )
     val uiState: StateFlow<SeedreamUiState> = _uiState
@@ -167,6 +168,11 @@ class SeedreamViewModel(application: Application) : AndroidViewModel(application
         }
     }
     fun setSearchApiKey(value: String) = _uiState.update { it.copy(searchApiKey = value) }
+
+    fun setThemeMode(value: String) {
+        settingsStorage.saveSetting("themeMode", value)
+        _uiState.update { it.copy(themeMode = value) }
+    }
 
     fun setLoggingEnabled(value: String) {
         settingsStorage.saveSetting("loggingEnabled", value)
@@ -352,7 +358,8 @@ class SeedreamViewModel(application: Application) : AndroidViewModel(application
                 searchApiKey = keyStorage.loadSearchApiKey(
                     settingsStorage.getSetting("searchProvider", "tavily")
                 ),
-                loggingEnabled = settingsStorage.getSetting("loggingEnabled", "false")
+                loggingEnabled = settingsStorage.getSetting("loggingEnabled", "false"),
+                themeMode = settingsStorage.getSetting("themeMode", "system")
             )
         }
     }

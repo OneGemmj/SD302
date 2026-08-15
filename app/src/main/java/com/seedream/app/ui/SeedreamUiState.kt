@@ -31,6 +31,7 @@ data class SeedreamUiState(
     val loggingEnabled: String = "false",
     val logContent: String = "",
     val logFileInfo: String = "",
+    val themeMode: String = "system",
     val backupStatus: String = "",
     val backupBusy: Boolean = false,
     val resultImages: List<ResultImage> = emptyList(),
