@@ -422,6 +422,7 @@ private fun CreateTab(
                 label = { Text("Prompt") },
                 minLines = 4,
                 maxLines = 5,
+                shape = MaterialTheme.shapes.small,
                 modifier = Modifier.fillMaxWidth()
             )
         }
@@ -451,6 +452,7 @@ private fun CreateTab(
             Button(
                 onClick = onSend,
                 enabled = !state.isGenerating,
+                shape = MaterialTheme.shapes.small,
                 modifier = Modifier.weight(1f)
             ) {
                 Icon(Icons.Default.Send, contentDescription = null)
@@ -460,6 +462,7 @@ private fun CreateTab(
             OutlinedButton(
                 onClick = onStop,
                 enabled = state.isGenerating,
+                shape = MaterialTheme.shapes.small,
                 modifier = Modifier.weight(1f)
             ) {
                 Icon(Icons.Default.Stop, contentDescription = null)
@@ -500,7 +503,7 @@ private fun StatusPanel(state: SeedreamUiState, onRetry: () -> Unit) {
             state.retryMessage?.let {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f), maxLines = 2)
-                    OutlinedButton(onClick = onRetry) {
+                    OutlinedButton(onClick = onRetry, shape = MaterialTheme.shapes.small) {
                         Icon(Icons.Default.Refresh, contentDescription = null)
                         Spacer(Modifier.width(4.dp))
                         Text("重试")
@@ -796,6 +799,7 @@ private fun HistoryTab(
                 value = state.historySearch,
                 onValueChange = onSearch,
                 label = { Text("搜索 Prompt") },
+                shape = MaterialTheme.shapes.small,
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
@@ -825,6 +829,7 @@ private fun HistoryTab(
                 OutlinedButton(
                     onClick = onClearAll,
                     enabled = state.history.isNotEmpty(),
+                    shape = MaterialTheme.shapes.small,
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
                 ) {
                     Icon(Icons.Default.Delete, contentDescription = null)
@@ -837,6 +842,7 @@ private fun HistoryTab(
                     Button(
                         onClick = { onDownloadSelected(selectedItems) },
                         modifier = Modifier.weight(1f),
+                        shape = MaterialTheme.shapes.small,
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
                     ) {
                         Icon(Icons.Default.Download, contentDescription = null)
@@ -847,6 +853,7 @@ private fun HistoryTab(
                         onClick = { onCopyLinks(selectedLinks) },
                         enabled = selectedLinks.isNotEmpty(),
                         modifier = Modifier.weight(1f),
+                        shape = MaterialTheme.shapes.small,
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
                     ) {
                         Icon(Icons.Default.ContentCopy, contentDescription = null)
@@ -859,6 +866,7 @@ private fun HistoryTab(
                             selectedIds = emptySet()
                         },
                         modifier = Modifier.weight(1f),
+                        shape = MaterialTheme.shapes.small,
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
                     ) {
@@ -910,6 +918,7 @@ private fun HistoryTab(
                         OutlinedButton(
                             onClick = onLoadMore,
                             enabled = !state.historyLoading,
+                            shape = MaterialTheme.shapes.small,
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Icon(Icons.Default.KeyboardArrowDown, contentDescription = null)
@@ -1074,6 +1083,7 @@ private fun ApiDialog(
                     label = { Text("API Key") },
                     visualTransformation = if (state.keyMasked) PasswordVisualTransformation() else VisualTransformation.None,
                     maxLines = 2,
+                    shape = MaterialTheme.shapes.small,
                     modifier = Modifier.fillMaxWidth()
                 )
                 CompactButtonRow {
@@ -1086,10 +1096,11 @@ private fun ApiDialog(
                     value = state.endpoint,
                     onValueChange = onEndpointChange,
                     label = { Text("接口地址") },
+                    shape = MaterialTheme.shapes.small,
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
-                OutlinedButton(onClick = onTestNetwork, modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(onClick = onTestNetwork, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.small) {
                     Icon(Icons.Default.WifiTethering, contentDescription = null)
                     Spacer(Modifier.width(6.dp))
                     Text("测试延迟")
@@ -1206,6 +1217,7 @@ private fun ParamsDialog(
                         value = state.seed,
                         onValueChange = onSeedChange,
                         label = { Text("seed（-1~2147483647）") },
+                        shape = MaterialTheme.shapes.small,
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
@@ -1245,6 +1257,7 @@ private fun ParamsDialog(
                         value = state.maxImages,
                         onValueChange = onMaxImagesChange,
                         label = { Text("max_images（1-15）") },
+                        shape = MaterialTheme.shapes.small,
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
@@ -1292,6 +1305,7 @@ private fun ParamsDialog(
                                 label = { Text("${provider.label} API Key") },
                                 visualTransformation = PasswordVisualTransformation(),
                                 maxLines = 2,
+                                shape = MaterialTheme.shapes.small,
                                 modifier = Modifier.fillMaxWidth()
                             )
                             CompactButtonRow {
@@ -1340,6 +1354,7 @@ private fun UrlImagesDialog(
                 onValueChange = onTextChange,
                 label = { Text("每行一个图片 URL") },
                 minLines = 5,
+                shape = MaterialTheme.shapes.small,
                 modifier = Modifier.fillMaxWidth()
             )
         },
@@ -1379,6 +1394,7 @@ private fun OptionDropdown(
         OutlinedButton(
             onClick = { expanded = true },
             modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.small,
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
         ) {
             Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.Start) {
@@ -1387,7 +1403,11 @@ private fun OptionDropdown(
             }
             Icon(Icons.Default.KeyboardArrowDown, contentDescription = null)
         }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            shape = MaterialTheme.shapes.small
+        ) {
             options.forEach { (optionValue, optionLabel) ->
                 DropdownMenuItem(
                     text = { Text(optionLabel) },
@@ -1421,6 +1441,7 @@ private fun RowScope.ToolButton(
     OutlinedButton(
         onClick = onClick,
         modifier = Modifier.weight(1f),
+        shape = MaterialTheme.shapes.small,
         colors = if (danger) ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error) else ButtonDefaults.outlinedButtonColors(),
         contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp)
     ) {
