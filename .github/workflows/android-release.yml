@@ -54,12 +54,12 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME:-manual}"
           mkdir -p release
-          cp app/build/outputs/apk/debug/app-debug.apk "release/Seedream-302-${VERSION}-debug.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "release/SD302-${VERSION}-debug.apk"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: seedream-302-apk
+          name: sd302-apk
           path: release/*.apk
 
       - name: Create GitHub Release
@@ -68,3 +68,10 @@ jobs:
         with:
           files: release/*.apk
           overwrite_files: true
+          prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') || contains(github.ref_name, 'alpha') }}
+          body: |
+            ## SD302 ${{ github.ref_name }}
+            - 应用更名为 SD302，UI 全面重设计（Material 3 + Material You 动态取色，参照 KernelSU 风格）
+            - 新增一键备份/还原功能
+            - 实时日志记录与崩溃捕获
+            - 修复点"停止"闪退问题

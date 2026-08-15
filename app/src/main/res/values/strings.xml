@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Seedream 302</string>
-    <string name="notification_channel_generation">Seedream 生成请求</string>
+    <string name="app_name">SD302</string>
+    <string name="notification_channel_generation">SD302 生成请求</string>
 </resources>

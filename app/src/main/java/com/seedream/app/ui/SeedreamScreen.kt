@@ -1,5 +1,6 @@
 package com.seedream.app.ui
 
+import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -30,11 +31,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Backup
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.OpenInFull
@@ -66,8 +71,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -103,27 +106,6 @@ import com.seedream.app.model.supportsWebSearch
 import com.seedream.app.network.SearchProvider
 import com.seedream.app.storage.HistoryEntity
 
-@Composable
-fun SeedreamTheme(content: @Composable () -> Unit) {
-    val context = LocalContext.current
-    val fallbackColors = darkColorScheme(
-        primary = Color(0xFF22C55E),
-        secondary = Color(0xFF60A5FA),
-        tertiary = Color(0xFFF59E0B),
-        background = Color(0xFF0B1020),
-        surface = Color(0xFF111827),
-        surfaceVariant = Color(0xFF1F2937),
-        onPrimary = Color.White,
-        onSecondary = Color.White,
-        onBackground = Color(0xFFE5E7EB),
-        onSurface = Color(0xFFE5E7EB),
-        onSurfaceVariant = Color(0xFFCBD5E1),
-        error = Color(0xFFEF4444)
-    )
-    val colors = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) dynamicDarkColorScheme(context) else fallbackColors
-    MaterialTheme(colorScheme = colors, content = content)
-}
-
 private enum class AppTab(
     val label: String,
     val icon: ImageVector
@@ -144,17 +126,35 @@ fun SeedreamScreen(state: SeedreamUiState, viewModel: SeedreamViewModel) {
     var showParamsDialog by remember { mutableStateOf(false) }
     var showUrlDialog by remember { mutableStateOf(false) }
     var confirmClearHistory by remember { mutableStateOf(false) }
+    var showBackupDialog by remember { mutableStateOf(false) }
+    var pendingRestoreUri by remember { mutableStateOf<Uri?>(null) }
 
     val pickImages = rememberLauncherForActivityResult(
         ActivityResultContracts.GetMultipleContents()
     ) { uris -> viewModel.addLocalImages(context, uris) }
+
+    // SAF launchers for backup export (zip) and restore import (zip).
+    val createBackupLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri ->
+        if (uri != null) viewModel.createBackupToUri(uri, context)
+    }
+    val openBackupLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) pendingRestoreUri = uri
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Column {
-                        Text("Seedream 302", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "SD302",
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
                         Text(
                             "图像生成与编辑",
                             style = MaterialTheme.typography.labelMedium,
@@ -163,8 +163,15 @@ fun SeedreamScreen(state: SeedreamUiState, viewModel: SeedreamViewModel) {
                     }
                 },
                 actions = {
-                    TextButton(onClick = { showApiDialog = true }) { Text("API") }
-                    TextButton(onClick = { showParamsDialog = true }) { Text("参数") }
+                    IconButton(onClick = { showApiDialog = true }) {
+                        Icon(Icons.Default.Key, contentDescription = "API")
+                    }
+                    IconButton(onClick = { showParamsDialog = true }) {
+                        Icon(Icons.Default.Settings, contentDescription = "参数")
+                    }
+                    IconButton(onClick = { showBackupDialog = true }) {
+                        Icon(Icons.Default.Backup, contentDescription = "备份")
+                    }
                 }
             )
         },
@@ -326,6 +333,35 @@ fun SeedreamScreen(state: SeedreamUiState, viewModel: SeedreamViewModel) {
             }
         )
     }
+
+    if (showBackupDialog) {
+        BackupDialog(
+            state = state,
+            onDismiss = { showBackupDialog = false },
+            onBackup = { createBackupLauncher.launch("SD302-backup-${System.currentTimeMillis()}.zip") },
+            onRestore = { openBackupLauncher.launch(arrayOf("application/zip")) },
+            onRestoreConfirm = { pendingRestoreUri = it }
+        )
+    }
+
+    pendingRestoreUri?.let { uri ->
+        AlertDialog(
+            onDismissRequest = { pendingRestoreUri = null },
+            title = { Text("一键还原") },
+            text = { Text("还原会覆盖当前的历史记录、设置和 API Key（恢复为备份中的内容）。确定继续吗？") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingRestoreUri = null
+                        viewModel.restoreFromUri(uri, context)
+                    }
+                ) { Text("还原") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingRestoreUri = null }) { Text("取消") }
+            }
+        )
+    }
 }
 
 @Composable
@@ -419,26 +455,39 @@ private fun CreateTab(
 
 @Composable
 private fun StatusPanel(state: SeedreamUiState, onRetry: () -> Unit) {
-    SurfacePanel {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(
-                text = state.status,
-                color = statusColor(state.statusKind),
-                modifier = Modifier.weight(1f),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-            if (state.isGenerating) {
-                Text("防休眠", color = Color(0xFF86EFAC), style = MaterialTheme.typography.labelSmall)
-            }
-        }
-        state.retryMessage?.let {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+        ),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f), maxLines = 2)
-                OutlinedButton(onClick = onRetry) {
-                    Icon(Icons.Default.Refresh, contentDescription = null)
-                    Spacer(Modifier.width(4.dp))
-                    Text("重试")
+                Text(
+                    text = state.status,
+                    color = statusColor(state.statusKind),
+                    modifier = Modifier.weight(1f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                if (state.isGenerating) {
+                    Text("防休眠", color = MaterialTheme.colorScheme.tertiary, style = MaterialTheme.typography.labelSmall)
+                }
+            }
+            state.retryMessage?.let {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f), maxLines = 2)
+                    OutlinedButton(onClick = onRetry) {
+                        Icon(Icons.Default.Refresh, contentDescription = null)
+                        Spacer(Modifier.width(4.dp))
+                        Text("重试")
+                    }
                 }
             }
         }
@@ -1038,6 +1087,44 @@ private fun ApiDialog(
 }
 
 @Composable
+private fun BackupDialog(
+    state: SeedreamUiState,
+    onDismiss: () -> Unit,
+    onBackup: () -> Unit,
+    onRestore: () -> Unit,
+    onRestoreConfirm: (Uri) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("一键备份 / 还原") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "备份：将图片缓存、历史记录（链接+提示词）、设置和 API Key 打包为 zip 文件导出。",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Text(
+                    "注意：备份文件包含 API Key 明文，请妥善保管，勿分享给他人。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+                CompactButtonRow {
+                    ToolButton("备份", Icons.Default.Backup, onBackup)
+                    ToolButton("还原", Icons.Default.Restore, onRestore, danger = true)
+                }
+                if (state.backupBusy) {
+                    Text("正在处理...", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                }
+                if (state.backupStatus.isNotBlank()) {
+                    Text(state.backupStatus, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("完成") } }
+    )
+}
+
+@Composable
 private fun ParamsDialog(
     state: SeedreamUiState,
     onDismiss: () -> Unit,
@@ -1219,11 +1306,12 @@ private fun SurfacePanel(
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(8.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        shape = RoundedCornerShape(16.dp)
     ) {
         Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
             content = content
         )
     }
@@ -1335,9 +1423,9 @@ private fun EmptyText(text: String) {
 @Composable
 private fun statusColor(kind: StatusKind): Color {
     return when (kind) {
-        StatusKind.Ok -> Color(0xFF86EFAC)
+        StatusKind.Ok -> MaterialTheme.colorScheme.primary
         StatusKind.Error -> MaterialTheme.colorScheme.error
-        StatusKind.Warn -> Color(0xFFFBBF24)
+        StatusKind.Warn -> MaterialTheme.colorScheme.tertiary
         StatusKind.Muted -> MaterialTheme.colorScheme.onSurfaceVariant
         StatusKind.Normal -> MaterialTheme.colorScheme.onSurface
     }

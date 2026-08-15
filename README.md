@@ -1,11 +1,11 @@
-<h1 align="center">Seedream 302 Android</h1>
+<h1 align="center">SD302</h1>
 
 <p align="center">
   <a href="README.md">简体中文</a> |
   <a href="README.en.md">English</a>
 </p>
 
-Seedream 302 Android 是一个原生 Android 图像生成与编辑工具，基于 Kotlin、Jetpack Compose、Room、Android Keystore 和前台生成服务实现。
+SD302 是一个原生 Android 图像生成与编辑工具，基于 Kotlin、Jetpack Compose、Room、Android Keystore 和前台生成服务实现。
 
 本项目最开始参考了 302.ai 官方文档：
 
@@ -63,33 +63,33 @@ app/build/outputs/apk/debug/app-debug.apk
 App 版本号在 `gradle.properties` 中维护：
 
 ```properties
-APP_VERSION_CODE=10
-APP_VERSION_NAME=1.1.8
+APP_VERSION_CODE=13
+APP_VERSION_NAME=2.0.0-beta1
 ```
 
-每次发布前都要递增 `APP_VERSION_CODE`，并让 `APP_VERSION_NAME` 与 Git 标签一致，例如 `v1.1.8` 对应 `APP_VERSION_NAME=1.1.8`。
+每次发布前都要递增 `APP_VERSION_CODE`，并让 `APP_VERSION_NAME` 与 Git 标签一致，例如 `v2.0.0-beta1` 对应 `APP_VERSION_NAME=2.0.0-beta1`。
 
 推送 `v*` 标签后，`.github/workflows/android-release.yml` 会在 GitHub Actions 中构建 APK，并上传到 GitHub Releases。详细流程见 [docs/RELEASE.md](docs/RELEASE.md)。
 
-本地构建后须把对应版本 APK 备份到 `releases/apk/`（命名如 `Seedream-302-v1.1.8-debug.apk`），但该目录下的 APK 不应提交到源码仓库；正式分发请使用 GitHub Releases。
+本地构建后须把对应版本 APK 备份到 `releases/apk/`（命名如 `SD302-v2.0.0-beta1-debug.apk`），但该目录下的 APK 不应提交到源码仓库；正式分发请使用 GitHub Releases。
 
-如果 `v1.1.8` 的 APK 没有出现在 GitHub Release，请检查标签是否已经推送：
+如果 `v2.0.0-beta1` 的 APK 没有出现在 GitHub Release，请检查标签是否已经推送：
 
 ```powershell
-git push origin v1.1.8
+git push origin v2.0.0-beta1
 ```
 
 如果标签已经存在但没有触发新的 workflow，可以删除远端旧标签后重新推送：
 
 ```powershell
-git push origin :refs/tags/v1.1.8
-git tag -d v1.1.8
-git tag v1.1.8
-git push origin v1.1.8
+git push origin :refs/tags/v2.0.0-beta1
+git tag -d v2.0.0-beta1
+git tag v2.0.0-beta1
+git push origin v2.0.0-beta1
 ```
 
 也可以手动把本地 APK 上传到已有发行版：
 
 ```powershell
-gh release upload v1.1.8 app\build\outputs\apk\debug\app-debug.apk --repo OneGemmj/302AISeedreamAPP --clobber
+gh release upload v2.0.0-beta1 app\build\outputs\apk\debug\app-debug.apk --repo OneGemmj/SD302 --clobber
 ```

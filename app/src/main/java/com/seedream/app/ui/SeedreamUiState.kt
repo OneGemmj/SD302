@@ -31,6 +31,8 @@ data class SeedreamUiState(
     val loggingEnabled: String = "false",
     val logContent: String = "",
     val logFileInfo: String = "",
+    val backupStatus: String = "",
+    val backupBusy: Boolean = false,
     val resultImages: List<ResultImage> = emptyList(),
     val payloadPreview: String = "{}",
     val rawResponse: String = "(暂无)",

@@ -95,7 +95,7 @@ class SearchClient {
             .url(url)
             .header("Accept", "application/json")
             .header("X-Subscription-Token", apiKey)
-            .header("User-Agent", "Seedream302Android/1.1.1")
+            .header("User-Agent", "SD302Android/2.0.0")
             .get()
             .build()
 

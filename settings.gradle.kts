@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "SeedreamAPP"
+rootProject.name = "SD302"
 include(":app")

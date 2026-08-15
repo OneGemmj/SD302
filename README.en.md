@@ -1,11 +1,11 @@
-<h1 align="center">Seedream 302 Android</h1>
+<h1 align="center">SD302</h1>
 
 <p align="center">
   <a href="README.md">简体中文</a> |
   <a href="README.en.md">English</a>
 </p>
 
-Seedream 302 Android is a native Android image generation and editing app built with Kotlin, Jetpack Compose, Room, Android Keystore, and a foreground generation service.
+SD302 is a native Android image generation and editing app built with Kotlin, Jetpack Compose, Room, Android Keystore, and a foreground generation service.
 
 The first implementation referenced the official 302.ai documentation:
 
@@ -63,12 +63,12 @@ app/build/outputs/apk/debug/app-debug.apk
 The app version is controlled in `gradle.properties`:
 
 ```properties
-APP_VERSION_CODE=10
-APP_VERSION_NAME=1.1.8
+APP_VERSION_CODE=13
+APP_VERSION_NAME=2.0.0-beta1
 ```
 
-Before each release, increment `APP_VERSION_CODE` and keep `APP_VERSION_NAME` aligned with the Git tag. For example, tag `v1.1.8` should use `APP_VERSION_NAME=1.1.8`.
+Before each release, increment `APP_VERSION_CODE` and keep `APP_VERSION_NAME` aligned with the Git tag. For example, tag `v2.0.0-beta1` should use `APP_VERSION_NAME=2.0.0-beta1`.
 
-After each local build, copy the APK to `releases/apk/` using the name pattern `Seedream-302-v1.1.8-debug.apk`. APKs under that folder should not be committed; publish distributable builds via GitHub Releases.
+After each local build, copy the APK to `releases/apk/` using the name pattern `SD302-v2.0.0-beta1-debug.apk`. APKs under that folder should not be committed; publish distributable builds via GitHub Releases.
 
 Pushing a `v*` tag triggers `.github/workflows/android-release.yml`, which builds the APK with GitHub Actions and uploads it to GitHub Releases. See [docs/RELEASE.md](docs/RELEASE.md) for details.

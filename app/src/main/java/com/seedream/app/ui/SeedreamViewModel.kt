@@ -10,6 +10,7 @@ import android.util.Base64
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.seedream.app.backup.BackupManager
 import com.seedream.app.model.DEFAULT_ENDPOINT
 import com.seedream.app.model.MODEL_SEEDREAM_4_5
 import com.seedream.app.model.MODEL_SEEDREAM_5
@@ -218,8 +219,8 @@ class SeedreamViewModel(application: Application) : AndroidViewModel(application
             type = "text/plain"
             putExtra(android.content.Intent.EXTRA_STREAM, uri)
             addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            putExtra(android.content.Intent.EXTRA_SUBJECT, "Seedream 运行日志")
-            putExtra(android.content.Intent.EXTRA_TEXT, "SeedreamAPP 运行日志（含崩溃信息），请查收")
+            putExtra(android.content.Intent.EXTRA_SUBJECT, "SD302 运行日志")
+            putExtra(android.content.Intent.EXTRA_TEXT, "SD302 运行日志（含崩溃信息），请查收")
         }
         val chooser = android.content.Intent.createChooser(intent, "导出日志")
         chooser.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -274,6 +275,86 @@ class SeedreamViewModel(application: Application) : AndroidViewModel(application
         keyStorage.clearSearchApiKey(provider)
         _uiState.update { it.copy(searchApiKey = "") }
         setStatus("已清空搜索服务 API Key", StatusKind.Muted)
+    }
+
+    /**
+     * Builds a backup zip and writes it to the given SAF [uri]. Progress and
+     * result are reported through [backupStatus] and the status line.
+     */
+    fun createBackupToUri(uri: Uri, context: Context) {
+        if (_uiState.value.backupBusy) {
+            setStatus("正在执行中，请稍候", StatusKind.Muted)
+            return
+        }
+        _uiState.update { it.copy(backupBusy = true, backupStatus = "正在备份...") }
+        viewModelScope.launch {
+            val result = runCatching {
+                val bytes = BackupManager(context).createBackup()
+                context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+                    ?: error("无法写入所选位置")
+            }
+            result.onSuccess {
+                _uiState.update { it.copy(backupBusy = false, backupStatus = "备份完成") }
+                setStatus("备份完成", StatusKind.Ok)
+            }.onFailure { e ->
+                val message = e.message ?: "备份失败"
+                _uiState.update { it.copy(backupBusy = false, backupStatus = message) }
+                setStatus(message, StatusKind.Error)
+            }
+        }
+    }
+
+    /** Reads a backup zip from [uri] and restores it. */
+    fun restoreFromUri(uri: Uri, context: Context) {
+        if (_uiState.value.backupBusy) {
+            setStatus("正在执行中，请稍候", StatusKind.Muted)
+            return
+        }
+        _uiState.update { it.copy(backupBusy = true, backupStatus = "正在还原...") }
+        viewModelScope.launch {
+            val result = runCatching {
+                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    ?: error("无法读取所选文件")
+                BackupManager(context).restore(bytes)
+            }.getOrElse { Result.failure(it) }
+
+            result.onSuccess { message ->
+                refreshHistory()
+                reloadSettings()
+                _uiState.update { it.copy(backupBusy = false, backupStatus = message) }
+                setStatus(message, StatusKind.Ok)
+            }.onFailure { e ->
+                val message = e.message ?: "还原失败"
+                _uiState.update { it.copy(backupBusy = false, backupStatus = message) }
+                setStatus(message, StatusKind.Error)
+            }
+        }
+    }
+
+    /** Re-reads settings from storage after a restore (mirrors the init block). */
+    private fun reloadSettings() {
+        _uiState.update {
+            it.copy(
+                endpoint = settingsStorage.getSetting("endpoint", DEFAULT_ENDPOINT),
+                model = settingsStorage.getSetting("model", MODEL_SEEDREAM_5),
+                size = settingsStorage.getSetting("size", "2K"),
+                seed = settingsStorage.getSetting("seed", ""),
+                responseFormat = settingsStorage.getSetting("responseFormat", "url"),
+                watermark = settingsStorage.getSetting("watermark", "false"),
+                stream = settingsStorage.getSetting("stream", "false"),
+                sequentialMode = settingsStorage.getSetting("sequentialMode", "disabled"),
+                maxImages = settingsStorage.getSetting("maxImages", ""),
+                outputFormat = settingsStorage.getSetting("outputFormat", "jpeg"),
+                webSearch = settingsStorage.getSetting("webSearch", "false"),
+                externalSearch = settingsStorage.getSetting("externalSearch", "false"),
+                searchProvider = settingsStorage.getSetting("searchProvider", "tavily"),
+                apiKey = keyStorage.loadApiKey(),
+                searchApiKey = keyStorage.loadSearchApiKey(
+                    settingsStorage.getSetting("searchProvider", "tavily")
+                ),
+                loggingEnabled = settingsStorage.getSetting("loggingEnabled", "false")
+            )
+        }
     }
 
     fun setUrlImagesText(text: String) {
