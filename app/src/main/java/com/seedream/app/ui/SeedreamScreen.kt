@@ -92,10 +92,14 @@ import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
 import com.seedream.app.model.MODEL_SEEDREAM_4_5
 import com.seedream.app.model.MODEL_SEEDREAM_5
+import com.seedream.app.model.MODEL_SEEDREAM_5_PRO
 import com.seedream.app.model.ReferenceImage
 import com.seedream.app.model.ReferenceKind
 import com.seedream.app.model.ResultImage
 import com.seedream.app.model.StatusKind
+import com.seedream.app.model.supportsOutputFormat
+import com.seedream.app.model.supportsStream
+import com.seedream.app.model.supportsWebSearch
 import com.seedream.app.network.SearchProvider
 import com.seedream.app.storage.HistoryEntity
 
@@ -347,6 +351,7 @@ private fun CreateTab(
                 label = "模型",
                 value = state.model,
                 options = listOf(
+                    MODEL_SEEDREAM_5_PRO to "Seedream 5.0 Pro",
                     MODEL_SEEDREAM_5 to "Seedream 5.0",
                     MODEL_SEEDREAM_4_5 to "Seedream 4.5"
                 ),
@@ -1029,16 +1034,27 @@ private fun ParamsDialog(
                     )
                 }
                 item { OptionDropdown("response_format", state.responseFormat, listOf("url" to "url", "b64_json" to "b64_json"), onFormatChange) }
-                item {
-                    OptionDropdown(
-                        "output_format（5.0 输出文件格式）",
-                        state.outputFormat,
-                        listOf("" to "默认", "jpeg" to "jpeg", "png" to "png"),
-                        onOutputFormatChange
-                    )
+                if (supportsOutputFormat(state.model)) {
+                    item {
+                        OptionDropdown(
+                            "output_format（5.0 / 5.0 Pro）",
+                            state.outputFormat,
+                            listOf("" to "默认", "jpeg" to "jpeg", "png" to "png"),
+                            onOutputFormatChange
+                        )
+                    }
                 }
                 item { OptionDropdown("watermark", state.watermark, listOf("" to "默认", "false" to "false", "true" to "true"), onWatermarkChange) }
-                item { OptionDropdown("stream（流式）", state.stream, listOf("false" to "false", "true" to "true"), onStreamChange) }
+                if (supportsStream(state.model)) {
+                    item {
+                        OptionDropdown(
+                            "stream（流式）",
+                            state.stream,
+                            listOf("false" to "false", "true" to "true"),
+                            onStreamChange
+                        )
+                    }
+                }
                 item {
                     OptionDropdown(
                         "sequential_image_generation（组图）",
@@ -1056,20 +1072,22 @@ private fun ParamsDialog(
                         singleLine = true
                     )
                 }
-                item {
-                    OptionDropdown(
-                        "联网搜索（仅 5.0，写入 tools）",
-                        state.webSearch,
-                        listOf("false" to "关闭", "true" to "开启：tools[{type=web_search}]"),
-                        onWebSearchChange
-                    )
-                }
-                item {
-                    Text(
-                        "开启后请求体会加入 tools: [{ type: \"web_search\" }]；模型会根据提示词自主判断是否搜索，可能增加延迟和费用。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                if (supportsWebSearch(state.model)) {
+                    item {
+                        OptionDropdown(
+                            "联网搜索（5.0 / 5.0 Pro，写入 tools）",
+                            state.webSearch,
+                            listOf("false" to "关闭", "true" to "开启：tools[{type=web_search}]"),
+                            onWebSearchChange
+                        )
+                    }
+                    item {
+                        Text(
+                            "开启后请求体会加入 tools: [{ type: \"web_search\" }]；模型会根据提示词自主判断是否搜索，可能增加延迟和费用。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
                 item {
                     OptionDropdown(

@@ -20,6 +20,8 @@ import com.seedream.app.model.SeedreamRequest
 import com.seedream.app.model.StatusKind
 import com.seedream.app.model.buildSeedreamRequest
 import com.seedream.app.model.parseUrlReferenceImages
+import com.seedream.app.model.supportsStream
+import com.seedream.app.model.supportsWebSearch
 import com.seedream.app.network.SearchClient
 import com.seedream.app.network.SearchProvider
 import com.seedream.app.network.SearchResult
@@ -93,12 +95,22 @@ class SeedreamViewModel(application: Application) : AndroidViewModel(application
     fun setModel(value: String) {
         settingsStorage.saveSetting("model", value)
         _uiState.update {
+            val nextWebSearch = if (!supportsWebSearch(value)) {
+                settingsStorage.saveSetting("webSearch", "false")
+                "false"
+            } else {
+                it.webSearch
+            }
+            val nextStream = if (!supportsStream(value)) {
+                settingsStorage.saveSetting("stream", "false")
+                "false"
+            } else {
+                it.stream
+            }
             it.copy(
                 model = value,
-                webSearch = if (value == MODEL_SEEDREAM_4_5) {
-                    settingsStorage.saveSetting("webSearch", "false")
-                    "false"
-                } else it.webSearch
+                webSearch = nextWebSearch,
+                stream = nextStream
             )
         }
     }

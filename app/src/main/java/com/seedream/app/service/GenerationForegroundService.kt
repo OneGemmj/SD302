@@ -8,7 +8,9 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import com.seedream.app.MainActivity
@@ -33,6 +35,7 @@ import kotlinx.coroutines.launch
 import okhttp3.Call
 import okhttp3.Response
 import org.json.JSONObject
+import java.util.concurrent.atomic.AtomicBoolean
 
 class GenerationForegroundService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -42,6 +45,35 @@ class GenerationForegroundService : Service() {
     private var currentCall: Call? = null
     private var currentResponse: Response? = null
     private var wakeLock: PowerManager.WakeLock? = null
+
+    /** Routes service-lifecycle calls to the main thread and runs teardown exactly once. */
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val stopCoordinator = ServiceStopCoordinator(
+        onStop = { teardownService() },
+        dispatchToMain = { action -> runOnMain(action) }
+    )
+
+    /** Set while the generation coroutine is deliberately cancelled; guards
+     *  against a close-induced IOException being misread as a network error. */
+    private val cancellationRequested = AtomicBoolean(false)
+
+    private fun runOnMain(action: () -> Unit) {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            action()
+        } else {
+            mainHandler.post(action)
+        }
+    }
+
+    /** Releases resources and stops the service. Called exactly once (guarded by
+     *  [stopCoordinator]) and always on the main thread. */
+    private fun teardownService() {
+        releaseWakeLock()
+        currentCall = null
+        currentResponse = null
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -61,7 +93,14 @@ class GenerationForegroundService : Service() {
         val pending = GenerationRequestStore.take(requestId)
         if (pending == null) {
             GenerationEvents.tryEmit(GenerationEvent.Failed("请求参数不完整"))
-            stopSelf()
+            // A service started via startForegroundService() must call
+            // startForeground() before it can be torn down, otherwise API 26+
+            // throws ForegroundServiceDidNotStartInTimeException. Promote to
+            // foreground first, then stop.
+            runOnMain {
+                startForeground(NOTIFICATION_ID, buildNotification("请求已结束", false))
+                stopCoordinator.stop()
+            }
             return START_NOT_STICKY
         }
 
@@ -74,7 +113,15 @@ class GenerationForegroundService : Service() {
     }
 
     override fun onDestroy() {
-        cancelGeneration()
+        // The service is already being torn down; cancel in-flight network work
+        // and release the wake lock, but never call stopForeground/stopSelf
+        // from onDestroy.
+        cancellationRequested.set(true)
+        currentCall?.cancel()
+        currentResponse?.close()
+        generationJob?.cancel()
+        generationJob = null
+        releaseWakeLock()
         scope.cancel()
         super.onDestroy()
     }
@@ -139,6 +186,15 @@ class GenerationForegroundService : Service() {
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Throwable) {
+                    // Closing the response while the streaming coroutine is
+                    // blocked on stream.read() surfaces as an IOException. When
+                    // a stop was requested, that is a cancellation, not a
+                    // network error to retry. Surface it as a CancellationException
+                    // so it follows the normal cancellation path (rethrowing the
+                    // raw IOException would escape the coroutine and crash).
+                    if (cancellationRequested.get()) {
+                        throw CancellationException("Generation cancelled", error)
+                    }
                     currentCall = null
                     currentResponse = null
                     lastError = error
@@ -154,11 +210,7 @@ class GenerationForegroundService : Service() {
             GenerationEvents.emit(GenerationEvent.Status("请求已取消", StatusKind.Muted))
             GenerationEvents.emit(GenerationEvent.Cancelled)
         } finally {
-            releaseWakeLock()
-            currentCall = null
-            currentResponse = null
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            stopCoordinator.stop()
         }
     }
 
@@ -246,14 +298,13 @@ class GenerationForegroundService : Service() {
     }
 
     private fun cancelGeneration() {
+        cancellationRequested.set(true)
         currentCall?.cancel()
         currentResponse?.close()
         generationJob?.cancel()
         generationJob = null
-        releaseWakeLock()
         GenerationEvents.tryEmit(GenerationEvent.Cancelled)
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
+        stopCoordinator.stop()
     }
 
     private fun createNotificationChannel() {
@@ -308,7 +359,13 @@ class GenerationForegroundService : Service() {
     }
 
     private fun releaseWakeLock() {
-        wakeLock?.takeIf { it.isHeld }?.release()
+        // Guard against "WakeLock under-locked": release() throws when the
+        // lock is no longer held. The coordinator already serializes calls,
+        // but keep this defensive for any residual concurrent path.
+        val lock = wakeLock
+        if (lock != null && lock.isHeld) {
+            lock.release()
+        }
         wakeLock = null
     }
 
