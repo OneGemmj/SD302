@@ -128,6 +128,29 @@ class GenerationForegroundService : Service() {
         super.onDestroy()
     }
 
+    /**
+     * Turns a 4xx body into something the user can act on. The provider reports
+     * a content-safety rejection as a plain 400, which reads as a generic client
+     * error even though the remedy is specific: a reference image carried inline
+     * as base64 puts the entire image into the request body, where the text
+     * safety filter sees it, while the same prompt with an image URL goes
+     * through. Surface the provider's own code so the message points somewhere.
+     */
+    private fun clientErrorMessage(code: Int, body: String): String {
+        val providerCode = runCatching {
+            JSONObject(body).optJSONObject("error")?.optString("code").orEmpty()
+        }.getOrDefault("")
+        return when (providerCode) {
+            "InputTextSensitiveContentDetected" ->
+                "请求失败：HTTP $code · 输入内容触发了 302.ai 的内容安全检测。\n" +
+                    "以 base64 内联的参考图会整段进入请求体，容易被文本审核误判。\n" +
+                    "建议改用 URL 参考图（图片先传到图床再粘贴链接），或换一张参考图重试。"
+            else ->
+                if (providerCode.isNotBlank()) "请求失败：HTTP $code · $providerCode"
+                else "请求失败：HTTP $code（客户端错误，不重试）"
+        }
+    }
+
     private suspend fun runGeneration(payloadJson: String, apiKey: String, endpoint: String) {
         val payload = JSONObject(payloadJson)
         val prompt = payload.optString("prompt")
@@ -162,12 +185,25 @@ class GenerationForegroundService : Service() {
                             val bodyText = response.body?.string().orEmpty()
                             GenerationEvents.emit(GenerationEvent.RawResponse(bodyText.compactForUi().ifBlank { "HTTP ${response.code}" }))
                             if (response.code in 400..499) {
-                                val message = "请求失败：HTTP ${response.code}（客户端错误，不重试）"
+                                // The provider's own error code — for example
+                                // InputTextSensitiveContentDetected — exists only
+                                // in this body, and a rejection is never retried,
+                                // so without this line it never reaches the log.
+                                LogEventBus.log(
+                                    "runGeneration: rejected HTTP ${response.code}: " +
+                                        bodyText.take(300).replace('\n', ' ')
+                                )
+                                val message = clientErrorMessage(response.code, bodyText)
                                 GenerationEvents.emit(GenerationEvent.Status(message, StatusKind.Error))
                                 GenerationEvents.emit(GenerationEvent.Failed(message))
                                 return
                             }
                             if (RetryPolicy.shouldRetryHttp(response.code) && attempt < RetryPolicy.maxRetries) {
+                                // Log it here as well: this path retries without
+                                // passing through the catch block below, and
+                                // without this line a server-error retry storm
+                                // leaves no trace in the log at all.
+                                LogEventBus.log("runGeneration: attempt $attempt failed: HTTP ${response.code}")
                                 lastError = IllegalStateException("HTTP ${response.code}")
                                 return@use
                             }
@@ -182,6 +218,10 @@ class GenerationForegroundService : Service() {
                         } else {
                             readJsonResponse(response, responseFormat, prompt, model, attempt)
                         }
+                        // Success used to leave no trace at all: teardown runs
+                        // from a finally block, so a completed request and a
+                        // cancelled one produced identical logs.
+                        LogEventBus.log("runGeneration: completed, stream=$stream")
                         GenerationEvents.emit(GenerationEvent.Completed)
                         currentResponse = null
                         return

@@ -2,6 +2,7 @@ package com.seedream.app.backup
 
 import android.content.Context
 import androidx.room.withTransaction
+import com.seedream.app.logging.LogEventBus
 import com.seedream.app.network.SearchProvider
 import com.seedream.app.storage.AppDatabase
 import com.seedream.app.storage.HistoryEntity
@@ -62,6 +63,7 @@ class BackupManager(
             val file = File(path)
             if (file.isFile) referenced[file.name] = record.id
         }
+        LogEventBus.log("backup: started, records=${records.size}, images=${referenced.size}")
 
         val manifest = BackupManifest(
             data = BackupData(
@@ -86,13 +88,15 @@ class BackupManager(
             images = referenced.map { (name, recordId) -> BackupImage(name = name, recordId = recordId) }
         )
 
-        BackupCodec.writeZip(
+        val written = BackupCodec.writeZip(
             out = out,
             manifest = manifest,
             imageNames = referenced.keys,
             onProgress = onProgress,
             openImage = { name -> File(cacheDir, name).takeIf { it.isFile }?.inputStream() }
         ).size
+        LogEventBus.log("backup: finished, wrote $written files")
+        written
     }
 
     /**
@@ -107,6 +111,7 @@ class BackupManager(
      * first.
      */
     suspend fun restoreFrom(openInput: () -> InputStream?): Result<String> = withContext(Dispatchers.IO) {
+        LogEventBus.log("restore: started")
         runCatching {
             val staging = File(appContext.cacheDir, STAGING_DIR)
             staging.deleteRecursively()
@@ -178,7 +183,10 @@ class BackupManager(
                 if (file.isFile && file.absolutePath !in keep) file.delete()
             }
 
+            LogEventBus.log("restore: finished, records=${restored.size}, images=${promoted.size}")
             "还原成功：" + restored.size + " 条历史记录，" + promoted.size + " 张图片"
+        }.onFailure {
+            LogEventBus.log("restore: failed: ${it.javaClass.simpleName}: ${it.message}")
         }
     }
 

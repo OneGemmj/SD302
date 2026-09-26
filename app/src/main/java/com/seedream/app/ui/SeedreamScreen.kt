@@ -407,58 +407,69 @@ private fun CreateTab(
     onSaveResult: (String) -> Unit,
     onGoResults: () -> Unit
 ) {
+    // The page is taller than the viewport on a phone: status strip, model
+    // card, prompt field, reference strip and the last result do not fit at
+    // once. The upper block scrolls, so a reference tile keeps its full ~190dp
+    // (thumbnail, file name, move/delete row) instead of being clipped, while
+    // the send row stays pinned and reachable.
     Column(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        StatusPanel(state = state, onRetry = onRetry)
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            StatusPanel(state = state, onRetry = onRetry)
 
-        SurfacePanel {
-            OptionDropdown(
-                label = "模型",
-                value = state.model,
-                options = listOf(
-                    MODEL_SEEDREAM_5 to "Seedream 5.0",
-                    MODEL_SEEDREAM_4_5 to "Seedream 4.5"
-                ),
-                onChange = onModelChange
-            )
-            OutlinedTextField(
-                value = state.prompt,
-                onValueChange = onPromptChange,
-                placeholder = { Text("描述你想要的画面…") },
-                minLines = 4,
-                maxLines = 6,
-                shape = MaterialTheme.shapes.extraLarge,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = Color.Transparent
-                ),
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
+            SurfacePanel {
+                OptionDropdown(
+                    label = "模型",
+                    value = state.model,
+                    options = listOf(
+                        MODEL_SEEDREAM_5 to "Seedream 5.0",
+                        MODEL_SEEDREAM_4_5 to "Seedream 4.5"
+                    ),
+                    onChange = onModelChange
+                )
+                OutlinedTextField(
+                    value = state.prompt,
+                    onValueChange = onPromptChange,
+                    placeholder = { Text("描述你想要的画面…") },
+                    minLines = 4,
+                    maxLines = 6,
+                    shape = MaterialTheme.shapes.extraLarge,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = Color.Transparent
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
 
-        ReferenceStrip(
-            references = state.references,
-            onPickImages = onPickImages,
-            onOpenUrlDialog = onOpenUrlDialog,
-            onClearReferences = onClearReferences,
-            onMoveReference = onMoveReference,
-            onDeleteReference = onDeleteReference,
-            onDeleteMultipleReferences = onDeleteMultipleReferences,
-            onPreview = onPreview,
-            modifier = Modifier.weight(1f)
-        )
-
-        state.resultImages.lastOrNull()?.let { image ->
-            RecentResult(
-                image = image,
-                onPreview = onPreview,
-                onSave = onSaveResult,
-                onGoResults = onGoResults
+            ReferenceStrip(
+                references = state.references,
+                onPickImages = onPickImages,
+                onOpenUrlDialog = onOpenUrlDialog,
+                onClearReferences = onClearReferences,
+                onMoveReference = onMoveReference,
+                onDeleteReference = onDeleteReference,
+                onDeleteMultipleReferences = onDeleteMultipleReferences,
+                onPreview = onPreview
             )
+
+            state.resultImages.lastOrNull()?.let { image ->
+                RecentResult(
+                    image = image,
+                    onPreview = onPreview,
+                    onSave = onSaveResult,
+                    onGoResults = onGoResults
+                )
+            }
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {

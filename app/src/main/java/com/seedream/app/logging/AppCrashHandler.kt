@@ -2,6 +2,7 @@ package com.seedream.app.logging
 
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Installs a default uncaught-exception handler that, before handing the crash
@@ -10,6 +11,7 @@ import java.io.InputStreamReader
  */
 object AppCrashHandler {
     private var previousHandler: Thread.UncaughtExceptionHandler? = null
+    private val logcatReaderRunning = AtomicBoolean(false)
 
     fun install() {
         if (previousHandler != null) return // already installed
@@ -17,7 +19,16 @@ object AppCrashHandler {
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             try {
                 LogEventBus.logBlock("== CRASH on ${thread.name} ==")
-                LogEventBus.logBlock(throwable.stackTraceToString())
+                // An OutOfMemoryError means the heap is already gone; building
+                // the full stack trace string allocates and would fail the same
+                // way, taking the report with it. The type and message cost
+                // nothing extra and are the part that matters.
+                val detail = if (throwable is OutOfMemoryError) {
+                    "${throwable.javaClass.name}: ${throwable.message}"
+                } else {
+                    throwable.stackTraceToString()
+                }
+                LogEventBus.logBlock(detail)
                 LogEventBus.flush()
             } catch (_: Throwable) {
                 // Never let logging itself break the crash path.
@@ -31,8 +42,13 @@ object AppCrashHandler {
      * Background reader that tails system logcat for crash lines the process
      * itself may not observe (e.g. a service thread killed by the runtime). Only
      * crash-relevant lines are captured to keep the file small.
+     *
+     * Idempotent on purpose: logging can be switched on and off repeatedly, and
+     * without this guard every toggle left another reader running, so one crash
+     * ended up appended to the log once per reader.
      */
     fun startLogcatReader() {
+        if (!logcatReaderRunning.compareAndSet(false, true)) return
         Thread {
             try {
                 val process = Runtime.getRuntime().exec(
@@ -47,6 +63,8 @@ object AppCrashHandler {
                 }
             } catch (_: Throwable) {
                 // logcat is best-effort; do not crash the app if unavailable.
+            } finally {
+                logcatReaderRunning.set(false)
             }
         }.apply {
             name = "Seedream-LogcatReader"
