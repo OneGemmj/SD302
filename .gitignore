@@ -21,3 +21,6 @@ captures/
 *.apk
 *.aab
 outputs/
+
+# Written by the release workflow to fill the release body.
+release-notes.md

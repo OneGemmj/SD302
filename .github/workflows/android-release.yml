@@ -16,6 +16,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # The release notes are built from the commits between the previous
+          # tag and this one, which needs the full history.
+          fetch-depth: 0
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -87,15 +91,32 @@ jobs:
           name: sd302-apk
           path: release/*.apk
 
+      # The notes are built here rather than with the action's
+      # generate_release_notes input: that calls a separate GitHub API whose
+      # failures are invisible, while git log is reproducible and testable.
+      - name: Build release notes
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          PREV_TAG="$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
+          {
+            echo "## SD302 ${GITHUB_REF_NAME}"
+            echo
+            if [ -n "$PREV_TAG" ]; then
+              echo "Changes since $PREV_TAG:"
+              echo
+              git log --no-merges --pretty='- %s' "$PREV_TAG..${GITHUB_REF_NAME}"
+            else
+              git log --no-merges --pretty='- %s' "${GITHUB_REF_NAME}"
+            fi
+          } > release-notes.md
+          cat release-notes.md
+
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: release/*.apk
           overwrite_files: true
+          body_path: release-notes.md
           prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') || contains(github.ref_name, 'alpha') }}
-          # Let GitHub list every commit between the previous tag and this one.
-          # A hand-written or commit-derived body goes stale: it either repeats
-          # the same notes for every release, or describes the last commit to
-          # land rather than the release itself.
-          generate_release_notes: true
