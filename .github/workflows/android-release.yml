@@ -94,7 +94,8 @@ jobs:
           files: release/*.apk
           overwrite_files: true
           prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') || contains(github.ref_name, 'alpha') }}
-          body: |
-            ## SD302 ${{ github.ref_name }}
-
-            ${{ github.event.head_commit.message || 'See the commit history for details.' }}
+          # Let GitHub list every commit between the previous tag and this one.
+          # A hand-written or commit-derived body goes stale: it either repeats
+          # the same notes for every release, or describes the last commit to
+          # land rather than the release itself.
+          generate_release_notes: true
