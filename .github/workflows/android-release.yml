@@ -112,46 +112,23 @@ jobs:
           } > release-notes.md
           cat release-notes.md
 
-      # Updating a release that already exists is the path that kept failing,
-      # so a stale release for this tag is cleared first and the action always
-      # takes its create path. The delete is explicit, so its result is visible
-      # in the log instead of surfacing as an opaque retry exhaustion.
-      - name: Remove a stale release for this tag
+      # Publishing goes through the GitHub CLI rather than a release action:
+      # the runner ships it, it says what went wrong when it fails, and one
+      # command covers both the create and the already-exists cases. An earlier
+      # attempt deletes its own leftover release first, and --cleanup-tag=false
+      # keeps that from taking the git tag with it.
+      - name: Publish release
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          body="$(curl -sS \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}")"
-          case "$body" in
-            *'"message":"Not Found"'*)
-              echo "no existing release for ${GITHUB_REF_NAME}"
-              exit 0
-              ;;
-          esac
-          release_id="${body#*\"id\":}"
-          release_id="${release_id%%,*}"
-          release_id="$(echo "$release_id" | tr -d ' ')"
-          if [ -z "$release_id" ]; then
-            echo "::error::could not read a release id for ${GITHUB_REF_NAME}"
-            exit 1
-          fi
-          echo "deleting stale release $release_id"
-          curl -sS -X DELETE \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/$release_id"
-          echo "deleted"
+          gh release delete "${GITHUB_REF_NAME}" --yes --cleanup-tag=false 2>/dev/null || true
 
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v3
-        with:
-          files: release/*.apk
-          overwrite_files: true
-          body_path: release-notes.md
-          prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') || contains(github.ref_name, 'alpha') }}
+          ARGS=(--title "${GITHUB_REF_NAME}" --notes-file release-notes.md --verify-tag)
+          case "${GITHUB_REF_NAME}" in
+            *beta*|*rc*|*alpha*) ARGS+=(--prerelease) ;;
+          esac
+          gh release create "${GITHUB_REF_NAME}" release/*.apk "${ARGS[@]}"
+          gh release view "${GITHUB_REF_NAME}" --json tagName,isPrerelease,assets
