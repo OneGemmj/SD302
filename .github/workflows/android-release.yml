@@ -23,11 +23,36 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      # The runner image already ships the Android command line tools, so the
+      # build uses them directly instead of depending on a third-party setup
+      # action. Every value is echoed, so a failure here names the cause.
+      - name: Locate Android SDK
+        shell: bash
+        run: |
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          if [ -z "$SDK_ROOT" ] || [ ! -d "$SDK_ROOT" ]; then
+            for candidate in /usr/local/lib/android/sdk /opt/android-sdk "$HOME/Android/Sdk"; do
+              if [ -d "$candidate" ]; then SDK_ROOT="$candidate"; break; fi
+            done
+          fi
+          if [ -z "$SDK_ROOT" ] || [ ! -d "$SDK_ROOT" ]; then
+            echo "::error::no Android SDK found on this runner"
+            exit 1
+          fi
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "$SDK_ROOT/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          echo "$SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
+          echo "SDK root: $SDK_ROOT"
+          ls "$SDK_ROOT"
 
       - name: Install Android SDK packages
-        run: sdkmanager "platform-tools" "platforms;android-37.0" "build-tools;37.0.0"
+        shell: bash
+        run: |
+          sdkmanager --version
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "platform-tools" "platforms;android-37.0" "build-tools;37.0.0"
+          sdkmanager --list_installed
 
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
@@ -71,7 +96,5 @@ jobs:
           prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') || contains(github.ref_name, 'alpha') }}
           body: |
             ## SD302 ${{ github.ref_name }}
-            - 应用更名为 SD302，UI 全面重设计（Material 3 + Material You 动态取色，参照 KernelSU 风格）
-            - 新增一键备份/还原功能
-            - 实时日志记录与崩溃捕获
-            - 修复点"停止"闪退问题
+
+            ${{ github.event.head_commit.message || 'See the commit history for details.' }}
