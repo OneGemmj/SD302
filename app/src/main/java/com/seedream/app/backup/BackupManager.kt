@@ -1,7 +1,7 @@
 package com.seedream.app.backup
 
 import android.content.Context
-import android.net.Uri
+import androidx.room.withTransaction
 import com.seedream.app.network.SearchProvider
 import com.seedream.app.storage.AppDatabase
 import com.seedream.app.storage.HistoryEntity
@@ -11,16 +11,24 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.io.InputStream
+import java.io.OutputStream
 
 /**
  * Android-side orchestration of one-click backup/restore.
  *
  * Backup: reads all history records, the image cache directory, all settings
- * and the API keys (as plaintext), then produces a zip via [BackupCodec].
+ * and the API keys (as plaintext), then streams a zip via [BackupCodec].
  *
- * Restore: parses the zip, replaces the history table, rewrites image cache
- * files (map backed-up file names to this device's cache directory), restores
- * settings, and re-encrypts the API keys into the Keystore of this device.
+ * Restore: streams the zip through a staging directory, promotes the images
+ * into this device's cache directory, replaces the history table inside a
+ * single transaction, restores settings, and re-encrypts the API keys into the
+ * Keystore of this device.
+ *
+ * Both directions stream the payload: images are copied through one buffer at
+ * a time, so a multi-hundred-megabyte history costs the same heap as an empty
+ * one. Everything here hops to [Dispatchers.IO] itself, so callers may invoke
+ * it from the main thread.
  */
 class BackupManager(
     context: Context,
@@ -28,46 +36,46 @@ class BackupManager(
     private val keyStorage: KeyStorage = KeyStorage(context)
 ) {
     private val appContext = context.applicationContext
-    private val dao = AppDatabase.get(appContext).historyDao()
+    private val database = AppDatabase.get(appContext)
+    private val dao = database.historyDao()
     private val cacheDir: File
         get() = File(appContext.filesDir, "history_images")
 
-    /** Builds a backup zip from the current app state. */
-    suspend fun createBackup(): ByteArray = withContext(Dispatchers.IO) {
+    /**
+     * Streams a backup of the current app state into [out].
+     *
+     * Only cache files that a history record actually references are exported,
+     * so orphans left behind by earlier crashes never bloat the archive.
+     *
+     * @return the number of image files written.
+     */
+    suspend fun createBackupTo(
+        out: OutputStream,
+        onProgress: (written: Int, total: Int) -> Unit = { _, _ -> }
+    ): Int = withContext(Dispatchers.IO) {
         val records = dao.allOnce()
-        val images = LinkedHashMap<String, ByteArray>()
-        val imageIndex = mutableListOf<BackupImage>()
 
-        cacheDir.listFiles()?.forEach { file ->
-            if (file.isFile) {
-                runCatching { file.readBytes() }.getOrNull()?.let { bytes ->
-                    images[file.name] = bytes
-                }
-            }
-        }
-        records.forEach { r ->
-            r.localPath?.let { abs ->
-                File(abs).takeIf { it.exists() }?.let { f ->
-                    imageIndex.add(BackupImage(name = f.name, recordId = r.id))
-                }
-            }
-        }
-
-        val backupRecords = records.map {
-            BackupRecord(
-                id = it.id,
-                source = it.source,
-                fileName = it.localPath?.let { p -> File(p).name },
-                prompt = it.prompt,
-                model = it.model,
-                timestamp = it.timestamp
-            )
+        // fileName -> recordId for every cache file the history still points at.
+        val referenced = LinkedHashMap<String, Long>()
+        records.forEach { record ->
+            val path = record.localPath ?: return@forEach
+            val file = File(path)
+            if (file.isFile) referenced[file.name] = record.id
         }
 
         val manifest = BackupManifest(
             data = BackupData(
                 version = BACKUP_FORMAT_VERSION,
-                records = backupRecords,
+                records = records.map {
+                    BackupRecord(
+                        id = it.id,
+                        source = it.source,
+                        fileName = it.localPath?.let { path -> File(path).name },
+                        prompt = it.prompt,
+                        model = it.model,
+                        timestamp = it.timestamp
+                    )
+                },
                 settings = settingsStorage.all(),
                 apiKeys = mapOf("api_key" to keyStorage.loadApiKey()),
                 searchApiKeys = SearchProvider.entries
@@ -75,46 +83,82 @@ class BackupManager(
                     .associate { it.id to keyStorage.loadSearchApiKey(it.id) }
                     .filterValues { it.isNotBlank() }
             ),
-            images = imageIndex
+            images = referenced.map { (name, recordId) -> BackupImage(name = name, recordId = recordId) }
         )
-        BackupCodec.buildZip(manifest, images)
+
+        BackupCodec.writeZip(
+            out = out,
+            manifest = manifest,
+            imageNames = referenced.keys,
+            onProgress = onProgress,
+            openImage = { name -> File(cacheDir, name).takeIf { it.isFile }?.inputStream() }
+        ).size
     }
 
     /**
-     * Restores state from a backup zip. Returns a human-readable summary on
-     * success or an error message on failure. The DB is cleared and replaced,
-     * so this is destructive — callers must confirm with the user first.
+     * Restores state from a backup produced by [createBackupTo].
+     *
+     * [openInput] is called to obtain the archive; images are staged in a
+     * temporary directory and promoted only once the whole archive has been
+     * read and validated, so a truncated or foreign file cannot wipe the
+     * current history. The history table is then replaced inside one
+     * transaction. Returns a human-readable summary on success or an error
+     * message on failure. Destructive — callers must confirm with the user
+     * first.
      */
-    suspend fun restore(bytes: ByteArray): Result<String> = withContext(Dispatchers.IO) {
+    suspend fun restoreFrom(openInput: () -> InputStream?): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
-            val content = BackupCodec.parseZip(bytes)
-                ?: error("备份文件无效：不是有效的压缩包或缺少清单文件")
-            val manifest = content.manifest
-            val data = manifest.data
-
-            // 1. Rewrite image cache files under this device's cache dir.
-            val writtenFiles = HashMap<String, String>() // fileName -> new absolute path
-            cacheDir.mkdirs()
-            content.imageFiles.forEach { (name, bytes) ->
-                val target = File(cacheDir, name)
-                FileOutputStream(target).use { it.write(bytes) }
-                writtenFiles[name] = target.absolutePath
+            val staging = File(appContext.cacheDir, STAGING_DIR)
+            staging.deleteRecursively()
+            if (!staging.mkdirs() && !staging.isDirectory) {
+                error("无法创建还原临时目录")
             }
 
-            // 2. Replace history table, rewriting localPath to this device.
-            dao.clear()
-            data.records.forEach { r ->
-                val newLocalPath = r.fileName?.let { writtenFiles[it] }
-                dao.insert(
-                    HistoryEntity(
-                        id = r.id,
-                        source = r.source,
-                        localPath = newLocalPath,
-                        prompt = r.prompt,
-                        model = r.model,
-                        timestamp = r.timestamp
-                    )
+            val manifest = try {
+                val input = openInput() ?: error("无法读取所选文件")
+                input.use { stream ->
+                    BackupCodec.readZip(stream) { name, data ->
+                        FileOutputStream(File(staging, name)).use { target -> data.copyTo(target) }
+                    }
+                } ?: error("备份文件无效：不是有效的压缩包或缺少清单文件")
+            } catch (t: Throwable) {
+                staging.deleteRecursively()
+                throw t
+            }
+
+            val data = manifest.data
+
+            // 1. Promote staged images into this device's cache directory.
+            cacheDir.mkdirs()
+            val promoted = HashMap<String, String>() // fileName -> new absolute path
+            staging.listFiles()?.forEach { file ->
+                val target = File(cacheDir, file.name)
+                if (!file.renameTo(target)) {
+                    file.inputStream().use { source ->
+                        FileOutputStream(target).use { dest -> source.copyTo(dest) }
+                    }
+                    file.delete()
+                }
+                promoted[file.name] = target.absolutePath
+            }
+            staging.deleteRecursively()
+
+            val restored = data.records.map { r ->
+                HistoryEntity(
+                    id = r.id,
+                    source = r.source,
+                    localPath = r.fileName?.let { promoted[it] },
+                    prompt = r.prompt,
+                    model = r.model,
+                    timestamp = r.timestamp
                 )
+            }
+
+            // 2. Replace history atomically: either every record lands or none
+            //    does, so a failure mid-way cannot leave a half-restored list.
+            database.withTransaction {
+                dao.clear()
+                restored.forEach { dao.insert(it) }
             }
 
             // 3. Restore settings.
@@ -128,7 +172,17 @@ class BackupManager(
                 keyStorage.saveSearchApiKey(providerId, value)
             }
 
-            "还原成功：${data.records.size} 条历史记录，${content.imageFiles.size} 张图片"
+            // 5. Drop cache files no restored record points at any more.
+            val keep = restored.mapNotNull { it.localPath }.toHashSet()
+            cacheDir.listFiles()?.forEach { file ->
+                if (file.isFile && file.absolutePath !in keep) file.delete()
+            }
+
+            "还原成功：" + restored.size + " 条历史记录，" + promoted.size + " 张图片"
         }
+    }
+
+    private companion object {
+        const val STAGING_DIR = "restore_staging"
     }
 }

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -66,12 +67,15 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -96,7 +100,6 @@ import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
 import com.seedream.app.model.MODEL_SEEDREAM_4_5
 import com.seedream.app.model.MODEL_SEEDREAM_5
-import com.seedream.app.model.MODEL_SEEDREAM_5_PRO
 import com.seedream.app.model.ReferenceImage
 import com.seedream.app.model.ReferenceKind
 import com.seedream.app.model.ResultImage
@@ -148,50 +151,56 @@ fun SeedreamScreen(state: SeedreamUiState, viewModel: SeedreamViewModel) {
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface
+                ),
                 title = {
-                    Column {
-                        Text(
-                            "SD302",
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            "图像生成与编辑",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    Text(
+                        "SD302",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold
+                    )
                 },
                 actions = {
-                    IconButton(onClick = { showApiDialog = true }) {
-                        Icon(Icons.Default.Key, contentDescription = "API")
-                    }
-                    IconButton(onClick = { showParamsDialog = true }) {
-                        Icon(Icons.Default.Settings, contentDescription = "参数")
-                    }
-                    IconButton(onClick = { showBackupDialog = true }) {
-                        Icon(Icons.Default.Backup, contentDescription = "备份")
-                    }
-                    IconButton(onClick = { showThemeDialog = true }) {
-                        Icon(
-                            if (state.themeMode == "dark") Icons.Default.DarkMode
-                            else Icons.Default.LightMode,
-                            contentDescription = "主题"
-                        )
-                    }
+                    DsIconButton(Icons.Default.Key, "API") { showApiDialog = true }
+                    DsIconButton(Icons.Default.Settings, "参数") { showParamsDialog = true }
+                    DsIconButton(Icons.Default.Backup, "备份") { showBackupDialog = true }
+                    DsIconButton(
+                        icon = if (state.themeMode == "dark") Icons.Default.DarkMode
+                        else Icons.Default.LightMode,
+                        description = "主题"
+                    ) { showThemeDialog = true }
                 }
             )
         },
         bottomBar = {
-            NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+            NavigationBar(
+                containerColor = MaterialTheme.colorScheme.background,
+                tonalElevation = 0.dp
+            ) {
                 AppTab.entries.forEach { tab ->
                     NavigationBarItem(
                         selected = selectedTab == tab,
                         onClick = { selectedTab = tab },
-                        icon = { Icon(tab.icon, contentDescription = tab.label) },
-                        label = { Text(tab.label) }
+                        icon = {
+                            Icon(
+                                tab.icon,
+                                contentDescription = tab.label,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        },
+                        label = { Text(tab.label, style = MaterialTheme.typography.labelMedium) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.primary,
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            indicatorColor = Color.Transparent,
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     )
                 }
             }
@@ -202,7 +211,7 @@ fun SeedreamScreen(state: SeedreamUiState, viewModel: SeedreamViewModel) {
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
                 .padding(padding)
-                .padding(12.dp)
+                .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
             when (selectedTab) {
                 AppTab.Create -> CreateTab(
@@ -348,8 +357,7 @@ fun SeedreamScreen(state: SeedreamUiState, viewModel: SeedreamViewModel) {
             state = state,
             onDismiss = { showBackupDialog = false },
             onBackup = { createBackupLauncher.launch("SD302-backup-${System.currentTimeMillis()}.zip") },
-            onRestore = { openBackupLauncher.launch(arrayOf("application/zip")) },
-            onRestoreConfirm = { pendingRestoreUri = it }
+            onRestore = { openBackupLauncher.launch(arrayOf("application/zip")) }
         )
     }
 
@@ -410,7 +418,6 @@ private fun CreateTab(
                 label = "模型",
                 value = state.model,
                 options = listOf(
-                    MODEL_SEEDREAM_5_PRO to "Seedream 5.0 Pro",
                     MODEL_SEEDREAM_5 to "Seedream 5.0",
                     MODEL_SEEDREAM_4_5 to "Seedream 4.5"
                 ),
@@ -419,10 +426,16 @@ private fun CreateTab(
             OutlinedTextField(
                 value = state.prompt,
                 onValueChange = onPromptChange,
-                label = { Text("Prompt") },
+                placeholder = { Text("描述你想要的画面…") },
                 minLines = 4,
-                maxLines = 5,
-                shape = MaterialTheme.shapes.small,
+                maxLines = 6,
+                shape = MaterialTheme.shapes.extraLarge,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = Color.Transparent
+                ),
                 modifier = Modifier.fillMaxWidth()
             )
         }
@@ -448,26 +461,42 @@ private fun CreateTab(
             )
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
             Button(
                 onClick = onSend,
                 enabled = !state.isGenerating,
-                shape = MaterialTheme.shapes.small,
+                shape = CircleShape,
+                elevation = ButtonDefaults.buttonElevation(
+                    defaultElevation = 0.dp,
+                    pressedElevation = 0.dp,
+                    disabledElevation = 0.dp
+                ),
                 modifier = Modifier.weight(1f)
             ) {
-                Icon(Icons.Default.Send, contentDescription = null)
+                Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("发送")
+                Text("发送", style = MaterialTheme.typography.labelLarge)
             }
-            OutlinedButton(
+            Button(
                 onClick = onStop,
                 enabled = state.isGenerating,
-                shape = MaterialTheme.shapes.small,
+                shape = CircleShape,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                ),
+                elevation = ButtonDefaults.buttonElevation(
+                    defaultElevation = 0.dp,
+                    pressedElevation = 0.dp,
+                    disabledElevation = 0.dp
+                ),
                 modifier = Modifier.weight(1f)
             ) {
-                Icon(Icons.Default.Stop, contentDescription = null)
+                Icon(Icons.Default.Stop, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("停止")
+                Text("停止", style = MaterialTheme.typography.labelLarge)
             }
         }
     }
@@ -477,14 +506,11 @@ private fun CreateTab(
 private fun StatusPanel(state: SeedreamUiState, onRetry: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer,
-            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-        ),
-        shape = MaterialTheme.shapes.large
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = MaterialTheme.shapes.medium
     ) {
         Column(
-            modifier = Modifier.padding(14.dp),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -749,7 +775,7 @@ private fun ResultImageCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 260.dp, max = 460.dp)
-                    .background(Color(0xFF020617))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
                     .clickable { onPreview(image.src) }
             )
             Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1151,8 +1177,7 @@ private fun BackupDialog(
     state: SeedreamUiState,
     onDismiss: () -> Unit,
     onBackup: () -> Unit,
-    onRestore: () -> Unit,
-    onRestoreConfirm: (Uri) -> Unit
+    onRestore: () -> Unit
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1226,7 +1251,7 @@ private fun ParamsDialog(
                 if (supportsOutputFormat(state.model)) {
                     item {
                         OptionDropdown(
-                            "output_format（5.0 / 5.0 Pro）",
+                            "output_format（5.0）",
                             state.outputFormat,
                             listOf("" to "默认", "jpeg" to "jpeg", "png" to "png"),
                             onOutputFormatChange
@@ -1265,7 +1290,7 @@ private fun ParamsDialog(
                 if (supportsWebSearch(state.model)) {
                     item {
                         OptionDropdown(
-                            "联网搜索（5.0 / 5.0 Pro，写入 tools）",
+                            "联网搜索（5.0，写入 tools）",
                             state.webSearch,
                             listOf("false" to "关闭", "true" to "开启：tools[{type=web_search}]"),
                             onWebSearchChange
@@ -1370,12 +1395,12 @@ private fun SurfacePanel(
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         shape = MaterialTheme.shapes.medium
     ) {
         Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
             content = content
         )
     }
@@ -1391,11 +1416,20 @@ private fun OptionDropdown(
     var expanded by remember { mutableStateOf(false) }
     val display = options.firstOrNull { it.first == value }?.second ?: value.ifBlank { "默认" }
     Box {
-        OutlinedButton(
+        Button(
             onClick = { expanded = true },
             modifier = Modifier.fillMaxWidth(),
             shape = MaterialTheme.shapes.small,
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                contentColor = MaterialTheme.colorScheme.onSurface
+            ),
+            elevation = ButtonDefaults.buttonElevation(
+                defaultElevation = 0.dp,
+                pressedElevation = 0.dp,
+                disabledElevation = 0.dp
+            ),
+            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)
         ) {
             Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.Start) {
                 Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall)
@@ -1421,6 +1455,35 @@ private fun OptionDropdown(
     }
 }
 
+/**
+ * DeepSeek-style chrome button: a soft grey disc with no ripple ring. Every
+ * top-bar affordance uses one, so the bar reads as a row of equal-weight
+ * circles instead of a line of bare glyphs.
+ */
+@Composable
+private fun DsIconButton(
+    icon: ImageVector,
+    description: String,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .padding(start = 6.dp)
+            .size(38.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.surface)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            icon,
+            contentDescription = description,
+            tint = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.size(19.dp)
+        )
+    }
+}
+
 @Composable
 private fun CompactButtonRow(content: @Composable RowScope.() -> Unit) {
     Row(
@@ -1438,16 +1501,24 @@ private fun RowScope.ToolButton(
     onClick: () -> Unit,
     danger: Boolean = false
 ) {
-    OutlinedButton(
+    Button(
         onClick = onClick,
         modifier = Modifier.weight(1f),
-        shape = MaterialTheme.shapes.small,
-        colors = if (danger) ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error) else ButtonDefaults.outlinedButtonColors(),
-        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp)
+        shape = CircleShape,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = MaterialTheme.colorScheme.surface,
+            contentColor = if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+        ),
+        elevation = ButtonDefaults.buttonElevation(
+            defaultElevation = 0.dp,
+            pressedElevation = 0.dp,
+            disabledElevation = 0.dp
+        ),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
     ) {
-        Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(4.dp))
-        Text(text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Icon(icon, contentDescription = null, modifier = Modifier.size(17.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(text, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelLarge)
     }
 }
 
@@ -1458,9 +1529,30 @@ private fun CenterMessage(
     modifier: Modifier = Modifier.fillMaxSize()
 ) {
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(64.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.PhotoLibrary,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(30.dp)
+                )
+            }
             Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text(body, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                body,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium
+            )
         }
     }
 }
@@ -1472,7 +1564,7 @@ private fun CodeBlock(text: String, modifier: Modifier = Modifier) {
             modifier = modifier
                 .fillMaxWidth()
                 .clip(MaterialTheme.shapes.small)
-                .background(Color(0xFF020617))
+                .background(Color(0xFF15171C))
                 .verticalScroll(rememberScrollState())
         ) {
             Text(

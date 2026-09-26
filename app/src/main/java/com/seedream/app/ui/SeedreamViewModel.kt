@@ -20,6 +20,7 @@ import com.seedream.app.model.RequestInput
 import com.seedream.app.model.SeedreamRequest
 import com.seedream.app.model.StatusKind
 import com.seedream.app.model.buildSeedreamRequest
+import com.seedream.app.model.normalizeModel
 import com.seedream.app.model.parseUrlReferenceImages
 import com.seedream.app.model.supportsStream
 import com.seedream.app.model.supportsWebSearch
@@ -64,7 +65,7 @@ class SeedreamViewModel(application: Application) : AndroidViewModel(application
         SeedreamUiState(
             apiKey = keyStorage.loadApiKey(),
             endpoint = settingsStorage.getSetting("endpoint", DEFAULT_ENDPOINT),
-            model = settingsStorage.getSetting("model", MODEL_SEEDREAM_5),
+            model = normalizeModel(settingsStorage.getSetting("model", MODEL_SEEDREAM_5)),
             size = settingsStorage.getSetting("size", "2K"),
             seed = settingsStorage.getSetting("seed", ""),
             responseFormat = settingsStorage.getSetting("responseFormat", "url"),
@@ -284,8 +285,10 @@ class SeedreamViewModel(application: Application) : AndroidViewModel(application
     }
 
     /**
-     * Builds a backup zip and writes it to the given SAF [uri]. Progress and
-     * result are reported through [backupStatus] and the status line.
+     * Streams a backup zip to the given SAF [uri]. The whole pipeline runs on
+     * [Dispatchers.IO]: assembling the archive on the main thread froze the UI
+     * once the history grew large, and writing to a cloud-backed [uri] from the
+     * main thread aborts with a NetworkOnMainThreadException.
      */
     fun createBackupToUri(uri: Uri, context: Context) {
         if (_uiState.value.backupBusy) {
@@ -295,9 +298,23 @@ class SeedreamViewModel(application: Application) : AndroidViewModel(application
         _uiState.update { it.copy(backupBusy = true, backupStatus = "正在备份...") }
         viewModelScope.launch {
             val result = runCatching {
-                val bytes = BackupManager(context).createBackup()
-                context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
-                    ?: error("无法写入所选位置")
+                withContext(Dispatchers.IO) {
+                    val resolver = context.contentResolver
+                    // "wt" truncates. Overwriting a longer existing file without
+                    // truncation keeps its stale tail and leaves an unreadable
+                    // zip behind.
+                    resolver.openOutputStream(uri, "wt")?.use { out ->
+                        BackupManager(context).createBackupTo(out) { written, total ->
+                            _uiState.update {
+                                it.copy(backupStatus = "正在备份... $written/$total")
+                            }
+                        }
+                    } ?: error("无法写入所选位置")
+                }
+            }
+            if (result.exceptionOrNull() is CancellationException) {
+                _uiState.update { it.copy(backupBusy = false) }
+                return@launch
             }
             result.onSuccess {
                 _uiState.update { it.copy(backupBusy = false, backupStatus = "备份完成") }
@@ -310,7 +327,11 @@ class SeedreamViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    /** Reads a backup zip from [uri] and restores it. */
+    /**
+     * Streams a backup zip from [uri] and restores it. Reading the archive, the
+     * restore itself and the summary all stay off the main thread, and the
+     * archive is validated before anything on this device is touched.
+     */
     fun restoreFromUri(uri: Uri, context: Context) {
         if (_uiState.value.backupBusy) {
             setStatus("正在执行中，请稍候", StatusKind.Muted)
@@ -319,10 +340,16 @@ class SeedreamViewModel(application: Application) : AndroidViewModel(application
         _uiState.update { it.copy(backupBusy = true, backupStatus = "正在还原...") }
         viewModelScope.launch {
             val result = runCatching {
-                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                    ?: error("无法读取所选文件")
-                BackupManager(context).restore(bytes)
-            }.getOrElse { Result.failure(it) }
+                withContext(Dispatchers.IO) {
+                    BackupManager(context).restoreFrom {
+                        context.contentResolver.openInputStream(uri)
+                    }.getOrThrow()
+                }
+            }
+            if (result.exceptionOrNull() is CancellationException) {
+                _uiState.update { it.copy(backupBusy = false) }
+                return@launch
+            }
 
             result.onSuccess { message ->
                 refreshHistory()
@@ -342,7 +369,7 @@ class SeedreamViewModel(application: Application) : AndroidViewModel(application
         _uiState.update {
             it.copy(
                 endpoint = settingsStorage.getSetting("endpoint", DEFAULT_ENDPOINT),
-                model = settingsStorage.getSetting("model", MODEL_SEEDREAM_5),
+                model = normalizeModel(settingsStorage.getSetting("model", MODEL_SEEDREAM_5)),
                 size = settingsStorage.getSetting("size", "2K"),
                 seed = settingsStorage.getSetting("seed", ""),
                 responseFormat = settingsStorage.getSetting("responseFormat", "url"),

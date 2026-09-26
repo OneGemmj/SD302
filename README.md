@@ -9,19 +9,17 @@ SD302 是一个原生 Android 图像生成与编辑工具，基于 Kotlin、Jetp
 
 本项目最开始参考了 302.ai 官方文档：
 
-- [Seedream 5.0 Pro 图像生成 API](https://s.apifox.cn/apidoc/docs-site/4012774/484942949e0)
 - [Seedream 5.0 图像生成 API](https://s.apifox.cn/apidoc/docs-site/4012774/419295548e0)
 - [Seedream 4.5 图像生成 API](https://s.apifox.cn/apidoc/docs-site/4012774/385925488e0)
 
 ## 功能
 
-- 支持 Seedream 5.0 Pro / 5.0 / 4.5 模型选择。
+- 支持 Seedream 5.0 / 4.5 模型选择。
 - 支持 Android 7.0 及以上系统（minSdk 24）。
 - API Key 保存、显示/隐藏、清空，并通过 Android Keystore 加密存储。
 - 接口地址可编辑，支持延迟测试。
 - 支持 Prompt、本地多图参考、URL 参考图、排序和删除。
-- 支持 `size`、`seed`、`response_format`、`watermark`、`stream`、`sequential_image_generation`、`max_images`、5.0 / 5.0 Pro 联网搜索等参数。
-- 5.0 Pro 与 5.0 调用方式相同，仅替换 `model` 为 `doubao-seedream-5-0-pro-260628`（官网说明）。
+- 支持 `size`、`seed`、`response_format`、`watermark`、`stream`、`sequential_image_generation`、`max_images`、5.0 联网搜索等参数。
 - 支持外部联网搜索：Tavily、Brave Search、Bing Web Search、DuckDuckGo；搜索结果会在发送到 302.ai 前注入 Prompt。
 - 请求期间使用前台服务，通知栏支持停止；网络错误和 5xx 错误支持重试。
 - 支持普通 JSON 和 SSE 流式响应解析。

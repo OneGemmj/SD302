@@ -2,21 +2,19 @@ package com.seedream.app
 
 import com.seedream.app.model.MODEL_SEEDREAM_4_5
 import com.seedream.app.model.MODEL_SEEDREAM_5
-import com.seedream.app.model.MODEL_SEEDREAM_5_PRO
 import com.seedream.app.model.ReferenceImage
 import com.seedream.app.model.ReferenceKind
 import com.seedream.app.model.RequestInput
 import com.seedream.app.model.buildSeedreamRequest
 import com.seedream.app.model.capabilitiesFor
 import com.seedream.app.model.isSeedream5Family
-import com.seedream.app.model.isSeedream5Pro
 import com.seedream.app.model.normalizeBoolean
+import com.seedream.app.model.normalizeModel
 import com.seedream.app.model.parseUrlReferenceImages
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import org.json.JSONObject
 
 class PayloadBuilderTest {
     @Test
@@ -51,52 +49,57 @@ class PayloadBuilderTest {
     }
 
     /**
-     * Official: Pro calling method is identical to 5.0 — only replace `model`.
-     * Payload shape (except model id) must match 5.0 for the same options.
+     * The 5.x capability set is what the picker promises for the default model:
+     * stream, output_format and tools.web_search all reach the payload.
      */
     @Test
-    fun seedream5ProMatchesSeedream5PayloadExceptModelId() {
-        val shared = baseInput(
-            model = MODEL_SEEDREAM_5,
-            references = listOf(
-                ReferenceImage(kind = ReferenceKind.Url, name = "u", value = "https://example.com/a.jpg")
-            ),
-            seed = "7",
-            stream = "false",
-            sequentialImageGeneration = "auto",
-            maxImages = "4",
-            outputFormat = "jpeg",
-            webSearch = "true"
+    fun seedream5PayloadCarriesFullCapabilitySet() {
+        val request = buildSeedreamRequest(
+            baseInput(
+                model = MODEL_SEEDREAM_5,
+                references = listOf(
+                    ReferenceImage(kind = ReferenceKind.Url, name = "u", value = "https://example.com/a.jpg")
+                ),
+                seed = "7",
+                stream = "false",
+                sequentialImageGeneration = "auto",
+                maxImages = "4",
+                outputFormat = "jpeg",
+                webSearch = "true"
+            )
         )
 
-        val five = buildSeedreamRequest(shared).toJsonObject()
-        val pro = buildSeedreamRequest(shared.copy(model = MODEL_SEEDREAM_5_PRO)).toJsonObject()
+        val json = request.toJsonObject()
+        assertEquals(MODEL_SEEDREAM_5, json.getString("model"))
 
-        assertEquals(MODEL_SEEDREAM_5, five.getString("model"))
-        assertEquals(MODEL_SEEDREAM_5_PRO, pro.getString("model"))
-
-        // Same keys and values after swapping model.
-        val fiveWithoutModel = JSONObject(five.toString()).apply { remove("model") }
-        val proWithoutModel = JSONObject(pro.toString()).apply { remove("model") }
-        assertEquals(fiveWithoutModel.toString(), proWithoutModel.toString())
-
-        val caps = capabilitiesFor(MODEL_SEEDREAM_5_PRO)
-        assertTrue(isSeedream5Family(MODEL_SEEDREAM_5_PRO))
-        assertTrue(isSeedream5Pro(MODEL_SEEDREAM_5_PRO))
+        val caps = capabilitiesFor(MODEL_SEEDREAM_5)
+        assertTrue(isSeedream5Family(MODEL_SEEDREAM_5))
         assertTrue(caps.supportsStream)
         assertTrue(caps.supportsOutputFormat)
         assertTrue(caps.supportsWebSearch)
-        assertTrue(pro.has("stream"))
-        assertFalse(pro.getBoolean("stream"))
-        assertEquals("jpeg", pro.getString("output_format"))
-        assertEquals("web_search", pro.getJSONArray("tools").getJSONObject(0).getString("type"))
-        assertEquals(4, pro.getJSONObject("sequential_image_generation_options").getInt("max_images"))
+        assertTrue(json.has("stream"))
+        assertFalse(json.getBoolean("stream"))
+        assertEquals("jpeg", json.getString("output_format"))
+        assertEquals("web_search", json.getJSONArray("tools").getJSONObject(0).getString("type"))
+        assertEquals(4, json.getJSONObject("sequential_image_generation_options").getInt("max_images"))
+    }
+
+    @Test
+    fun retiredModelIdsFallBackToTheDefaultModel() {
+        assertEquals(MODEL_SEEDREAM_5, normalizeModel(MODEL_SEEDREAM_5))
+        assertEquals(MODEL_SEEDREAM_4_5, normalizeModel(MODEL_SEEDREAM_4_5))
+        // A model id this build no longer ships must not survive in settings or
+        // in a backup restored from an older version — otherwise the picker
+        // would show a raw id and the request would carry it to the API.
+        assertEquals(MODEL_SEEDREAM_5, normalizeModel("doubao-seedream-5-0-pro-260628"))
+        assertEquals(MODEL_SEEDREAM_5, normalizeModel(""))
+        assertEquals(MODEL_SEEDREAM_5, normalizeModel("some-future-model"))
     }
 
     @Test
     fun maxImagesIsCoercedToApiRange() {
         val json = buildSeedreamRequest(
-            baseInput(model = MODEL_SEEDREAM_5_PRO, maxImages = "20", sequentialImageGeneration = "auto")
+            baseInput(model = MODEL_SEEDREAM_5, maxImages = "20", sequentialImageGeneration = "auto")
         ).toJsonObject()
         assertEquals(15, json.getJSONObject("sequential_image_generation_options").getInt("max_images"))
         assertFalse(json.has("max_images"))

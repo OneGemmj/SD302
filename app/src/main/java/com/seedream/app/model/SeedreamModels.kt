@@ -5,17 +5,15 @@ import org.json.JSONObject
 import java.util.UUID
 
 const val DEFAULT_ENDPOINT = "https://api.302.ai/doubao/images/generations"
-const val MODEL_SEEDREAM_5_PRO = "doubao-seedream-5-0-pro-260628"
 const val MODEL_SEEDREAM_5 = "doubao-seedream-5-0-260128"
 const val MODEL_SEEDREAM_4_5 = "doubao-seedream-4-5-251128"
 
 /**
  * Per-model request field support.
  *
- * Official guidance for Seedream 5.0 Pro
- * (`doubao-seedream-5-0-pro-260628`): calling method is the same as 5.0 —
- * only replace the `model` field. So Pro shares the full 5.x capability set
- * (stream, tools.web_search, output_format, sequential options, etc.).
+ * Seedream 5.x accepts the full field set — stream, tools.web_search,
+ * output_format and the sequential-image options — while older models only
+ * take the common fields.
  */
 data class SeedreamModelCapabilities(
     val supportsStream: Boolean,
@@ -23,11 +21,20 @@ data class SeedreamModelCapabilities(
     val supportsWebSearch: Boolean
 )
 
-/** Seedream 5.x family (5.0 / 5.0 Pro). */
+/** Seedream 5.x family. */
 fun isSeedream5Family(model: String): Boolean = model.startsWith("doubao-seedream-5-")
 
-fun isSeedream5Pro(model: String): Boolean =
-    model == MODEL_SEEDREAM_5_PRO || model.contains("seedream-5-0-pro", ignoreCase = true)
+/** The models this build offers in the picker. */
+val SUPPORTED_MODELS = listOf(MODEL_SEEDREAM_5, MODEL_SEEDREAM_4_5)
+
+/**
+ * Maps a stored model id onto a model this build still ships. Settings and
+ * backups written by an earlier version can name a model that has since been
+ * retired; without this the picker would show a raw id and the request would
+ * carry it to the API as-is.
+ */
+fun normalizeModel(model: String): String =
+    if (model in SUPPORTED_MODELS) model else MODEL_SEEDREAM_5
 
 fun capabilitiesFor(model: String): SeedreamModelCapabilities = when {
     isSeedream5Family(model) -> SeedreamModelCapabilities(

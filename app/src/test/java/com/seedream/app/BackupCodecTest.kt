@@ -5,11 +5,17 @@ import com.seedream.app.backup.BackupData
 import com.seedream.app.backup.BackupImage
 import com.seedream.app.backup.BackupManifest
 import com.seedream.app.backup.BackupRecord
+import com.seedream.app.backup.IMAGE_DIR
+import com.seedream.app.backup.MANIFEST_NAME
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 class BackupCodecTest {
     private fun sampleManifest(): BackupManifest {
@@ -36,7 +42,7 @@ class BackupCodecTest {
                 ),
                 settings = mapOf(
                     "endpoint" to "https://api.302.ai/foo",
-                    "model" to "doubao-seedream-5-0-pro-260628",
+                    "model" to "doubao-seedream-5-0-260128",
                     "stream" to "true"
                 ),
                 apiKeys = mapOf("api_key" to "sk-123-secret"),
@@ -45,6 +51,19 @@ class BackupCodecTest {
             images = listOf(
                 BackupImage(name = "seedream_100_123.jpg", recordId = 1L)
             )
+        )
+    }
+
+    private fun emptyManifest(): BackupManifest {
+        return BackupManifest(
+            data = BackupData(
+                version = 1,
+                records = emptyList(),
+                settings = emptyMap(),
+                apiKeys = emptyMap(),
+                searchApiKeys = emptyMap()
+            ),
+            images = emptyList()
         )
     }
 
@@ -91,17 +110,7 @@ class BackupCodecTest {
 
     @Test
     fun emptyStateRoundTrips() {
-        val manifest = BackupManifest(
-            data = BackupData(
-                version = 1,
-                records = emptyList(),
-                settings = emptyMap(),
-                apiKeys = emptyMap(),
-                searchApiKeys = emptyMap()
-            ),
-            images = emptyList()
-        )
-        val zip = BackupCodec.buildZip(manifest, emptyMap())
+        val zip = BackupCodec.buildZip(emptyManifest(), emptyMap())
         val content = BackupCodec.parseZip(zip)
         assertNotNull(content)
         assertEquals(0, content!!.manifest.data.records.size)
@@ -188,5 +197,96 @@ class BackupCodecTest {
         assertEquals(1024, parsed.imageFiles["a.jpg"]!!.size)
         assertEquals(2048, parsed.imageFiles["b.jpg"]!!.size)
         assertEquals(2, parsed.manifest.images.size)
+    }
+
+    @Test
+    fun writeZipCopiesImagesThroughWithoutBufferingThemAll() {
+        // 4 MB in, 4 MB out, one buffer at a time: the streaming path must not
+        // depend on the archive fitting in memory.
+        val payload = ByteArray(4 * 1024 * 1024) { (it % 251).toByte() }
+        val manifest = BackupManifest(
+            data = BackupData(1, emptyList(), emptyMap(), emptyMap(), emptyMap()),
+            images = listOf(BackupImage("big.jpg", 1L))
+        )
+
+        val sink = ByteArrayOutputStream()
+        val progress = mutableListOf<Pair<Int, Int>>()
+        val attempted = mutableListOf<String>()
+        val written = BackupCodec.writeZip(
+            out = sink,
+            manifest = manifest,
+            imageNames = listOf("big.jpg", "missing.jpg"),
+            onProgress = { done, total -> progress.add(done to total) },
+            openImage = { name ->
+                attempted.add(name)
+                if (name == "big.jpg") ByteArrayInputStream(payload) else null
+            }
+        )
+
+        // A cache file the manager cannot open is skipped instead of aborting
+        // the whole backup.
+        assertEquals(listOf("big.jpg"), written)
+        assertEquals(listOf("big.jpg", "missing.jpg"), attempted)
+        assertEquals(listOf(1 to 2), progress)
+
+        val header = BackupCodec.readZip(ByteArrayInputStream(sink.toByteArray()))!!
+        assertEquals(1, header.images.size)
+        assertEquals("big.jpg", header.images[0].name)
+
+        var streamed = -1
+        val parsed = BackupCodec.readZip(ByteArrayInputStream(sink.toByteArray())) { name, data ->
+            if (name == "big.jpg") streamed = data.readBytes().size
+        }
+        assertNotNull(parsed)
+        assertEquals(1, parsed!!.images.size)
+        assertEquals(payload.size, streamed)
+    }
+
+    @Test
+    fun readZipRefusesImagesThatPrecedeTheManifest() {
+        // The manifest is always the first entry this app writes. A foreign
+        // archive must not get to hand out file writes before it is validated.
+        val out = ByteArrayOutputStream()
+        ZipOutputStream(out).use { zip ->
+            zip.putNextEntry(ZipEntry(IMAGE_DIR + "sneaky.jpg"))
+            zip.write(byteArrayOf(1, 2, 3))
+            zip.closeEntry()
+            zip.putNextEntry(ZipEntry(MANIFEST_NAME))
+            zip.write("{}".toByteArray())
+            zip.closeEntry()
+        }
+
+        var handedOut = 0
+        val manifest = BackupCodec.readZip(ByteArrayInputStream(out.toByteArray())) { _, _ ->
+            handedOut++
+        }
+        assertNull(manifest)
+        assertEquals(0, handedOut)
+    }
+
+    @Test
+    fun writeZipSkipsUnsafeImageNames() {
+        val sink = ByteArrayOutputStream()
+        val written = BackupCodec.writeZip(
+            out = sink,
+            manifest = emptyManifest(),
+            imageNames = listOf("../escape.jpg", "nested/dir.jpg", "..", "ok.jpg"),
+            openImage = { ByteArrayInputStream(byteArrayOf(7)) }
+        )
+        assertEquals(listOf("ok.jpg"), written)
+
+        val reread = BackupCodec.parseZip(sink.toByteArray())!!
+        assertEquals(1, reread.imageFiles.size)
+        assertTrue(reread.imageFiles.containsKey("ok.jpg"))
+    }
+
+    @Test
+    fun sanitizeImageNameRejectsTraversalAndKeepsPlainNames() {
+        assertNull(BackupCodec.sanitizeImageName("../../etc/passwd"))
+        assertNull(BackupCodec.sanitizeImageName("nested/dir.jpg"))
+        assertNull(BackupCodec.sanitizeImageName("nested\\dir.jpg"))
+        assertNull(BackupCodec.sanitizeImageName(".."))
+        assertNull(BackupCodec.sanitizeImageName("   "))
+        assertEquals("seedream_1_2.jpg", BackupCodec.sanitizeImageName(" seedream_1_2.jpg "))
     }
 }

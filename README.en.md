@@ -9,19 +9,17 @@ SD302 is a native Android image generation and editing app built with Kotlin, Je
 
 The first implementation referenced the official 302.ai documentation:
 
-- [Seedream 5.0 Pro Image Generation API](https://s.apifox.cn/apidoc/docs-site/4012774/484942949e0)
 - [Seedream 5.0 Image Generation API](https://s.apifox.cn/apidoc/docs-site/4012774/419295548e0)
 - [Seedream 4.5 Image Generation API](https://s.apifox.cn/apidoc/docs-site/4012774/385925488e0)
 
 ## Features
 
-- Seedream 5.0 Pro / 5.0 / 4.5 model selection.
+- Seedream 5.0 / 4.5 model selection.
 - Android 7.0 and later support (minSdk 24).
 - API key save, show/hide, clear, encrypted with Android Keystore.
 - Editable API endpoint and latency test.
 - Prompt input, multiple local reference images, URL reference images, sorting and deletion.
-- Payload options for `size`, `seed`, `response_format`, `watermark`, `stream`, `sequential_image_generation`, `max_images`, and 5.0 / 5.0 Pro web search.
-- Seedream 5.0 Pro uses the same call shape as 5.0; only the `model` field changes to `doubao-seedream-5-0-pro-260628` (official guidance).
+- Payload options for `size`, `seed`, `response_format`, `watermark`, `stream`, `sequential_image_generation`, `max_images`, and 5.0 web search.
 - External web search via Tavily, Brave Search, Bing Web Search, or DuckDuckGo; search summaries are injected into the prompt before sending requests to 302.ai.
 - Foreground service while generating, notification stop action, retry for 5xx/network failures.
 - JSON and SSE response parsing.

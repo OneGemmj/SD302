@@ -7,8 +7,8 @@ Use Git tags and GitHub Releases so source code and APK files stay tied to the s
 Edit `gradle.properties`:
 
 ```properties
-APP_VERSION_CODE=13
-APP_VERSION_NAME=2.0.0-beta1
+APP_VERSION_CODE=16
+APP_VERSION_NAME=2.1.0-beta1
 ```
 
 Rules:
