@@ -15,14 +15,14 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # The release notes are built from the commits between the previous
           # tag and this one, which needs the full history.
           fetch-depth: 0
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
@@ -86,7 +86,7 @@ jobs:
           cp app/build/outputs/apk/debug/app-debug.apk "release/SD302-${VERSION}-debug.apk"
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sd302-apk
           path: release/*.apk
@@ -112,9 +112,44 @@ jobs:
           } > release-notes.md
           cat release-notes.md
 
+      # Updating a release that already exists is the path that kept failing,
+      # so a stale release for this tag is cleared first and the action always
+      # takes its create path. The delete is explicit, so its result is visible
+      # in the log instead of surfacing as an opaque retry exhaustion.
+      - name: Remove a stale release for this tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          body="$(curl -sS \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}")"
+          case "$body" in
+            *'"message":"Not Found"'*)
+              echo "no existing release for ${GITHUB_REF_NAME}"
+              exit 0
+              ;;
+          esac
+          release_id="${body#*\"id\":}"
+          release_id="${release_id%%,*}"
+          release_id="$(echo "$release_id" | tr -d ' ')"
+          if [ -z "$release_id" ]; then
+            echo "::error::could not read a release id for ${GITHUB_REF_NAME}"
+            exit 1
+          fi
+          echo "deleting stale release $release_id"
+          curl -sS -X DELETE \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/$release_id"
+          echo "deleted"
+
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: release/*.apk
           overwrite_files: true
